@@ -11,6 +11,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def _write_executable(path: Path, content: str):
+    path.write_text(content)
+    path.chmod(path.stat().st_mode | stat.S_IXUSR)
+
+
 def test_nvcc_parse():
     sample = """nvcc: NVIDIA (R) Cuda compiler driver
 Copyright (c) 2005-2025 NVIDIA Corporation
@@ -71,10 +76,103 @@ def test_run_suite_respects_env_toggles_over_profile_defaults():
             assert f"disabled by {toggle}=0" in (item.get("notes") or ""), f"{backend} notes missing disable reason"
 
 
+def test_cpu_encode_fallback_uses_devnull_target_and_degrades():
+    bench_cpu = ROOT / "scripts" / "bench_cpu.sh"
+    with tempfile.TemporaryDirectory() as td:
+        bindir = Path(td) / "bin"
+        bindir.mkdir()
+
+        _write_executable(bindir / "sysbench", "#!/usr/bin/env bash\necho 'events per second: 123.45'\n")
+        _write_executable(bindir / "7z", "#!/usr/bin/env bash\necho 'Tot: 9999 MIPS'\n")
+        _write_executable(
+            bindir / "timeout",
+            "#!/usr/bin/env bash\n"
+            "if [[ \"${1:-}\" == \"--foreground\" ]]; then shift; fi\n"
+            "shift\n"
+            "exec \"$@\"\n",
+        )
+        _write_executable(
+            bindir / "ffmpeg",
+            "#!/usr/bin/env bash\n"
+            "if [[ \"${1:-}\" == \"-version\" ]]; then\n"
+            "  echo 'ffmpeg version n7-test'\n"
+            "  exit 0\n"
+            "fi\n"
+            "printf '%s\\n' \"$@\" > \"${TMP_FFMPEG_ARGS:?}\"\n"
+            "case \" $* \" in *\" -c:v libx264 \"*) exit 1 ;; esac\n"
+            "case \" $* \" in *\" -c:v mpeg4 \"*) exit 0 ;; esac\n"
+            "exit 2\n",
+        )
+
+        out_json = Path(td) / "cpu.json"
+        out_csv = Path(td) / "cpu.csv"
+        args_file = Path(td) / "ffmpeg.args"
+
+        env = os.environ.copy()
+        env["PATH"] = f"{bindir}:{env.get('PATH', '')}"
+        env["TMP_FFMPEG_ARGS"] = str(args_file)
+        env["CPU_DURATION"] = "1"
+        env["CPU_COMPRESS_DURATION"] = "1"
+        env["CPU_ENCODE_DURATION"] = "1"
+
+        p = subprocess.run([str(bench_cpu), str(out_json), str(out_csv)], cwd=ROOT, env=env, capture_output=True, text=True)
+        assert p.returncode == 0, p.stderr
+
+        data = json.loads(out_json.read_text())
+        assert data["subtests"]["encoding"]["status"] == "degraded"
+        assert data["subtests"]["encoding"]["tool"] == "ffmpeg_mpeg4"
+        assert data["diagnostics"]["ffmpeg"]["output_target"] == "/dev/null"
+        assert data["diagnostics"]["ffmpeg"]["timeout_wrapper"] == "timeout"
+
+        args = args_file.read_text()
+        assert "/dev/null" in args, args
+
+
+def test_cpu_encode_failure_includes_explicit_diagnostics_when_stderr_empty():
+    bench_cpu = ROOT / "scripts" / "bench_cpu.sh"
+    with tempfile.TemporaryDirectory() as td:
+        bindir = Path(td) / "bin"
+        bindir.mkdir()
+
+        _write_executable(
+            bindir / "ffmpeg",
+            "#!/usr/bin/env bash\n"
+            "if [[ \"${1:-}\" == \"-version\" ]]; then\n"
+            "  echo 'ffmpeg version n7-test'\n"
+            "  exit 0\n"
+            "fi\n"
+            "exit 42\n",
+        )
+
+        out_json = Path(td) / "cpu.json"
+        out_csv = Path(td) / "cpu.csv"
+
+        env = os.environ.copy()
+        env["PATH"] = f"{bindir}:{env.get('PATH', '')}"
+        env["CPU_DURATION"] = "1"
+        env["CPU_COMPRESS_DURATION"] = "1"
+        env["CPU_ENCODE_DURATION"] = "1"
+
+        p = subprocess.run([str(bench_cpu), str(out_json), str(out_csv)], cwd=ROOT, env=env, capture_output=True, text=True)
+        assert p.returncode == 0, p.stderr
+
+        data = json.loads(out_json.read_text())
+        notes = data.get("notes", "")
+        ffdiag = data["diagnostics"]["ffmpeg"]
+
+        assert data["subtests"]["encoding"]["status"] == "failed"
+        assert ffdiag["error_code"] == "42"
+        assert ffdiag["error_reason"] == "exit_42"
+        assert ffdiag["error_tail"] == "no_stderr_output"
+        assert "encoding_ffmpeg_fallback_failed:exit_42:no_stderr_output" in notes
+
+
 def main():
     test_nvcc_parse()
     test_llama_discovery_env_override()
     test_run_suite_respects_env_toggles_over_profile_defaults()
+    test_cpu_encode_fallback_uses_devnull_target_and_degrades()
+    test_cpu_encode_failure_includes_explicit_diagnostics_when_stderr_empty()
     print("validate_fixes.py: OK")
 
 

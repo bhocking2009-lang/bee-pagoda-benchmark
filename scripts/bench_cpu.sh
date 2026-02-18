@@ -11,6 +11,8 @@ THREADS="${CPU_THREADS:-0}"
 CPU_COMPRESS_DURATION="${CPU_COMPRESS_DURATION:-20}"
 CPU_ENCODE_DURATION="${CPU_ENCODE_DURATION:-20}"
 
+PYTHON_BIN="${BENCH_PYTHON:-python3}"
+
 status="ok"
 bench="cpu_suite"
 score=""
@@ -28,8 +30,50 @@ encode_status="skipped"
 encode_tool="none"
 encode_score=""
 
-json_escape() {
-  python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
+ffmpeg_bin=""
+ffmpeg_version=""
+encode_command=""
+encode_error_tail=""
+encode_error_code=""
+encode_error_reason=""
+encode_timeout_used=""
+encode_output_target="${CPU_FFMPEG_NULL_TARGET:-/dev/null}"
+
+resolve_ffmpeg_bin() {
+  local explicit="${CPU_FFMPEG_BIN:-${FFMPEG_BIN:-}}"
+  if [[ -n "$explicit" ]]; then
+    if [[ -x "$explicit" ]]; then
+      echo "$explicit"
+      return 0
+    fi
+    return 1
+  fi
+
+  if command -v ffmpeg >/dev/null 2>&1; then
+    command -v ffmpeg
+    return 0
+  fi
+
+  return 1
+}
+
+capture_ffmpeg_version() {
+  local bin="$1"
+  "$bin" -version 2>/dev/null | head -n1 | sed -E 's/[[:space:]]+/ /g' || true
+}
+
+run_with_optional_timeout() {
+  local timeout_sec="$1"
+  shift
+
+  if command -v timeout >/dev/null 2>&1; then
+    encode_timeout_used="timeout"
+    timeout --foreground "$timeout_sec" "$@"
+    return $?
+  fi
+
+  encode_timeout_used="none"
+  "$@"
 }
 
 # Baseline: sysbench -> openssl fallback
@@ -67,7 +111,7 @@ fi
 if command -v 7z >/dev/null 2>&1; then
   compress_tool="7z_b"
   tmp="$(mktemp)"
-  if 7z b -mmt="$THREADS" >"$tmp" 2>&1; then
+  if timeout "$CPU_COMPRESS_DURATION" 7z b -mmt="$THREADS" >"$tmp" 2>&1; then
     compress_status="ok"
     rating="$(grep -E 'Tot:.*MIPS|Tot:' "$tmp" | tail -n1 | grep -Eo '[0-9]+' | tail -n1 || true)"
     compress_score="${rating:-}"
@@ -82,34 +126,57 @@ else
 fi
 
 # Encoding: ffmpeg synthetic encode from test source
-if command -v ffmpeg >/dev/null 2>&1; then
-  encode_tool="ffmpeg_libx264"
-  tmp="$(mktemp)"
+if ffmpeg_bin="$(resolve_ffmpeg_bin)"; then
+  ffmpeg_version="$(capture_ffmpeg_version "$ffmpeg_bin")"
   timeout_sec="$((CPU_ENCODE_DURATION + 20))"
 
-  started="$(date +%s.%N)"
-  if timeout "$timeout_sec" ffmpeg -v error -f lavfi -i testsrc=size=1280x720:rate=30 \
-      -t "$CPU_ENCODE_DURATION" -c:v libx264 -preset medium -f null - >"$tmp" 2>&1; then
-    ended="$(date +%s.%N)"
-    elapsed="$(awk -v s="$started" -v e="$ended" 'BEGIN {printf "%.3f", e-s}')"
+  run_encode_once() {
+    local tmp_file="$1"
+    shift
+
+    local started ended rc
+    started="$(date +%s.%N)"
+    set +e
+    run_with_optional_timeout "$timeout_sec" "$ffmpeg_bin" -v error -nostdin -hide_banner -nostats \
+      -f lavfi -i testsrc=size=1280x720:rate=30 -t "$CPU_ENCODE_DURATION" "$@" -f null "$encode_output_target" >"$tmp_file" 2>&1
+    rc=$?
+    set -e
+
+    if [[ $rc -eq 0 ]]; then
+      ended="$(date +%s.%N)"
+      encode_score="$(awk -v s="$started" -v e="$ended" 'BEGIN {printf "%.3f", e-s}')"
+      return 0
+    fi
+
+    encode_error_code="$rc"
+    if [[ $rc -eq 124 || $rc -eq 137 ]]; then
+      encode_error_reason="timeout"
+    else
+      encode_error_reason="exit_${rc}"
+    fi
+    return 1
+  }
+
+  tmp="$(mktemp)"
+  encode_command="$ffmpeg_bin -v error -nostdin -hide_banner -nostats -f lavfi -i testsrc=size=1280x720:rate=30 -t $CPU_ENCODE_DURATION -c:v libx264 -preset medium -f null $encode_output_target"
+  if run_encode_once "$tmp" -c:v libx264 -preset medium; then
+    encode_tool="ffmpeg_libx264"
     encode_status="ok"
-    encode_score="$elapsed"
     notes+=("encoding=ffmpeg_libx264")
   else
-    # Always attempt a simpler fallback codec when primary encode path fails.
-    encode_tool="ffmpeg_mpeg4"
-    started="$(date +%s.%N)"
-    if timeout "$timeout_sec" ffmpeg -v error -f lavfi -i testsrc=size=1280x720:rate=30 \
-        -t "$CPU_ENCODE_DURATION" -c:v mpeg4 -q:v 5 -pix_fmt yuv420p -f null - >"$tmp" 2>&1; then
-      ended="$(date +%s.%N)"
-      elapsed="$(awk -v s="$started" -v e="$ended" 'BEGIN {printf "%.3f", e-s}')"
+    encode_command="$ffmpeg_bin -v error -nostdin -hide_banner -nostats -f lavfi -i testsrc=size=1280x720:rate=30 -t $CPU_ENCODE_DURATION -c:v mpeg4 -q:v 5 -pix_fmt yuv420p -f null $encode_output_target"
+    if run_encode_once "$tmp" -c:v mpeg4 -q:v 5 -pix_fmt yuv420p; then
+      encode_tool="ffmpeg_mpeg4"
       encode_status="degraded"
-      encode_score="$elapsed"
       notes+=("encoding=ffmpeg_mpeg4_fallback")
     else
+      encode_tool="ffmpeg_mpeg4"
       encode_status="failed"
-      err_tail="$(tail -n 1 "$tmp" | tr '"' "'" | tr ';' ',' || true)"
-      notes+=("encoding_ffmpeg_fallback_failed:${err_tail}")
+      encode_error_tail="$(tail -n 40 "$tmp" | tr '\n' '|' | tr '"' "'" | tr ';' ',' | sed -E 's/\|+$//' || true)"
+      if [[ -z "$encode_error_tail" ]]; then
+        encode_error_tail="no_stderr_output"
+      fi
+      notes+=("encoding_ffmpeg_fallback_failed:${encode_error_reason}:${encode_error_tail}")
     fi
   fi
   rm -f "$tmp"
@@ -151,6 +218,20 @@ cat > "$OUT_JSON" <<EOF
       "status": "$encode_status",
       "tool": "$encode_tool",
       "elapsed_sec": "${encode_score}"
+    }
+  },
+  "diagnostics": {
+    "python_interpreter": "$PYTHON_BIN",
+    "cpu_threads": "$THREADS",
+    "ffmpeg": {
+      "path": "${ffmpeg_bin}",
+      "version": "${ffmpeg_version}",
+      "command": "${encode_command}",
+      "output_target": "${encode_output_target}",
+      "timeout_wrapper": "${encode_timeout_used}",
+      "error_code": "${encode_error_code}",
+      "error_reason": "${encode_error_reason}",
+      "error_tail": "${encode_error_tail}"
     }
   },
   "notes": "$notes_str"

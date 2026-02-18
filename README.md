@@ -42,11 +42,13 @@ cd /home/openclaw/.openclaw/workspace/project-linux-benchmark-tool
 ./run_suite.sh balanced
 ```
 
-`run_suite.sh` auto-selects Python in this order for consistency across preflight/AI/reporting:
+`run_suite.sh` auto-selects Python in this order for consistency across preflight/AI/reporting/CPU diagnostics:
 1. `--python /path/to/python` (explicit override)
 2. active shell virtualenv (`$VIRTUAL_ENV/bin/python`)
 3. local project venv (`./.venv/bin/python`, then `./.venv312/bin/python`)
 4. system `python3`
+
+The selected interpreter is exported as `BENCH_PYTHON` and reused by all Python-backed steps.
 
 By default, suite start runs a preflight dependency scan before benchmarks.
 
@@ -162,6 +164,8 @@ For each run, a folder is created under `reports/run-<timestamp>-<profile>/`:
 
 - CPU baseline: `sysbench` → fallback `openssl speed`
 - CPU workload: `7z b` + `ffmpeg` encode (best-effort fallback codec)
+  - deterministic ffmpeg selection: `CPU_FFMPEG_BIN` (or `FFMPEG_BIN`) override → first `ffmpeg` in `PATH`
+  - CPU raw JSON includes `diagnostics.ffmpeg.path/version/command/error_tail` for troubleshooting
 - GPU compute: `clpeak` → fallback `hashcat -b`
 - AI: runs all enabled backends independently in one invocation:
   - `llama-bench` (llama.cpp) when binary + model are available
@@ -197,6 +201,11 @@ Strictness semantics:
 - **Graphics context issues**: profiles default to `GPU_GAME_MODE=offscreen` to avoid display coupling.
   - For desktop windowed runs, set `GPU_GAME_MODE=interactive`.
   - To avoid failing full runs on graphics-context problems, keep `STRICT_GPU_GAME=0` (default).
+- **CPU encode failures (`ffmpeg`)**:
+  - Inspect `raw/cpu.json` → `diagnostics.ffmpeg` for selected binary path/version and last error tail.
+  - Pin a known binary if multiple ffmpeg builds are installed:
+    - `CPU_FFMPEG_BIN=/usr/bin/ffmpeg ./run_suite.sh quick cpu`
+  - If `libx264` is unavailable in your ffmpeg build, suite automatically retries `mpeg4` and marks CPU step as `degraded`.
 - **No benchmark tools installed**: run `./scripts/install_dependencies.sh` or install manually.
 - **Permission issues with package manager**: rerun install script with a sudo-capable user.
 - **Missing Python**: install `python3`; report generator requires Python 3.
