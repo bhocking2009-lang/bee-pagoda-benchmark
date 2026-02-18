@@ -1,0 +1,5 @@
+balanced_cpu_exit=1
+balanced_full_exit=1
+quick_cpu_run1_exit=1
+quick_cpu_run2_exit=1
+quick_cpu_run3_exit=1
