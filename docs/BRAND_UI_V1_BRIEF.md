@@ -107,3 +107,8 @@ From current benchmark outputs:
 3. No fabricated metrics; all units tied to real fields.
 4. Results summary matches exported report values.
 5. Branding uses bee-pagoda motif consistently.
+
+## 9) Implementation handoff
+
+- Implementable MVP details and explicit schema mappings are documented in:
+  - `docs/UI_MVP_SPEC.md`
