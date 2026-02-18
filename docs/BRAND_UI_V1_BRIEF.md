@@ -15,7 +15,19 @@ Owner: Controller
   - AI: aqua/teal
   - Memory/Storage: violet/blue
 
-## 2) Screens to implement
+## 2) Product presentation modes
+
+1. **Ops Mode (primary)**
+   - Practical control surface for Linux users and power users.
+   - Dense status/diagnostics, preflight-first behavior.
+
+2. **Showcase Mode (secondary)**
+   - Sleek, polished presentation layer for demos and Windows migrants.
+   - Same underlying data, simplified visual storytelling.
+
+Both modes must read from the same benchmark outputs and never fabricate metrics.
+
+## 3) Screens to implement
 
 ## A) Intro / Launch Screen
 Purpose: choose benchmark profile + rendering options + start run

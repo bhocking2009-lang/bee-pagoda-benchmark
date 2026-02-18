@@ -14,6 +14,11 @@ Hard constraints:
 - Missing values render as `N/A` + reason from `status`/`notes`.
 - Keep backend contract as source of truth; UI is a view layer.
 
+Audience modes (both required in roadmap):
+- **Ops Mode (default)**: control-first, diagnostics-heavy, tuning-focused.
+- **Showcase Mode (presentation)**: sleek visual summary for demos/new user appeal.
+- Both modes must use the exact same data source and integrity rules.
+
 ## 2) MVP scope (what ships)
 
 ### In scope
