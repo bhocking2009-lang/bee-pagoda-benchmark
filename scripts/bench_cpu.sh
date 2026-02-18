@@ -85,22 +85,22 @@ fi
 if command -v ffmpeg >/dev/null 2>&1; then
   encode_tool="ffmpeg_libx264"
   tmp="$(mktemp)"
+  timeout_sec="$((CPU_ENCODE_DURATION + 20))"
+
   started="$(date +%s.%N)"
-  if timeout "$((CPU_ENCODE_DURATION + 10))" ffmpeg -v error -f lavfi -i testsrc=size=1280x720:rate=30 \
+  if timeout "$timeout_sec" ffmpeg -v error -f lavfi -i testsrc=size=1280x720:rate=30 \
       -t "$CPU_ENCODE_DURATION" -c:v libx264 -preset medium -f null - >"$tmp" 2>&1; then
     ended="$(date +%s.%N)"
     elapsed="$(awk -v s="$started" -v e="$ended" 'BEGIN {printf "%.3f", e-s}')"
     encode_status="ok"
     encode_score="$elapsed"
     notes+=("encoding=ffmpeg_libx264")
-  elif ffmpeg -hide_banner -encoders 2>/dev/null | grep -q 'libx264'; then
-    encode_status="failed"
-    notes+=("encoding_ffmpeg_failed")
   else
+    # Always attempt a simpler fallback codec when primary encode path fails.
     encode_tool="ffmpeg_mpeg4"
     started="$(date +%s.%N)"
-    if timeout "$((CPU_ENCODE_DURATION + 10))" ffmpeg -v error -f lavfi -i testsrc=size=1280x720:rate=30 \
-        -t "$CPU_ENCODE_DURATION" -c:v mpeg4 -q:v 5 -f null - >"$tmp" 2>&1; then
+    if timeout "$timeout_sec" ffmpeg -v error -f lavfi -i testsrc=size=1280x720:rate=30 \
+        -t "$CPU_ENCODE_DURATION" -c:v mpeg4 -q:v 5 -pix_fmt yuv420p -f null - >"$tmp" 2>&1; then
       ended="$(date +%s.%N)"
       elapsed="$(awk -v s="$started" -v e="$ended" 'BEGIN {printf "%.3f", e-s}')"
       encode_status="degraded"
@@ -108,7 +108,8 @@ if command -v ffmpeg >/dev/null 2>&1; then
       notes+=("encoding=ffmpeg_mpeg4_fallback")
     else
       encode_status="failed"
-      notes+=("encoding_ffmpeg_fallback_failed")
+      err_tail="$(tail -n 1 "$tmp" | tr '"' "'" | tr ';' ',' || true)"
+      notes+=("encoding_ffmpeg_fallback_failed:${err_tail}")
     fi
   fi
   rm -f "$tmp"
