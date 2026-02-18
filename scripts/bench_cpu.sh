@@ -30,6 +30,14 @@ encode_status="skipped"
 encode_tool="none"
 encode_score=""
 
+compress_bin=""
+compress_version=""
+compress_command=""
+compress_error_tail=""
+compress_error_code=""
+compress_error_reason=""
+compress_timeout_used=""
+
 ffmpeg_bin=""
 ffmpeg_version=""
 encode_command=""
@@ -57,23 +65,74 @@ resolve_ffmpeg_bin() {
   return 1
 }
 
+resolve_7z_bin() {
+  local explicit="${CPU_7Z_BIN:-${SEVENZIP_BIN:-}}"
+  if [[ -n "$explicit" ]]; then
+    if [[ -x "$explicit" ]]; then
+      echo "$explicit"
+      return 0
+    fi
+    return 1
+  fi
+
+  if command -v 7z >/dev/null 2>&1; then
+    command -v 7z
+    return 0
+  fi
+
+  if command -v 7zz >/dev/null 2>&1; then
+    command -v 7zz
+    return 0
+  fi
+
+  return 1
+}
+
 capture_ffmpeg_version() {
   local bin="$1"
   "$bin" -version 2>/dev/null | head -n1 | sed -E 's/[[:space:]]+/ /g' || true
 }
 
+capture_7z_version() {
+  local bin="$1"
+  "$bin" 2>&1 | head -n1 | sed -E 's/[[:space:]]+/ /g' || true
+}
+
 run_with_optional_timeout() {
   local timeout_sec="$1"
-  shift
+  local mode="$2"
+  shift 2
 
   if command -v timeout >/dev/null 2>&1; then
-    encode_timeout_used="timeout"
+    if [[ "$mode" == "compression" ]]; then
+      compress_timeout_used="timeout"
+    else
+      encode_timeout_used="timeout"
+    fi
     timeout --foreground "$timeout_sec" "$@"
     return $?
   fi
 
-  encode_timeout_used="none"
+  if [[ "$mode" == "compression" ]]; then
+    compress_timeout_used="none"
+  else
+    encode_timeout_used="none"
+  fi
   "$@"
+}
+
+parse_7z_score() {
+  local file="$1"
+  awk '
+    /Tot:/ {
+      if (match($0, /Tot:[^0-9]*([0-9]+(\.[0-9]+)?)/, m)) {
+        v=m[1]
+      }
+    }
+    END {
+      if (v != "") print v
+    }
+  ' "$file" | tail -n1
 }
 
 # Baseline: sysbench -> openssl fallback
@@ -107,19 +166,48 @@ else
   notes+=("baseline_missing_sysbench_openssl")
 fi
 
-# Compression: 7z benchmark
-if command -v 7z >/dev/null 2>&1; then
+# Compression: 7z benchmark (best effort; avoid hard-failing suite on unstable 7z path)
+if compress_bin="$(resolve_7z_bin)"; then
   compress_tool="7z_b"
+  compress_version="$(capture_7z_version "$compress_bin")"
   tmp="$(mktemp)"
-  if timeout "$CPU_COMPRESS_DURATION" 7z b -mmt="$THREADS" >"$tmp" 2>&1; then
-    compress_status="ok"
-    rating="$(grep -E 'Tot:.*MIPS|Tot:' "$tmp" | tail -n1 | grep -Eo '[0-9]+' | tail -n1 || true)"
-    compress_score="${rating:-}"
-    notes+=("compression=7z")
+  compress_command="$compress_bin b -mmt=$THREADS"
+
+  set +e
+  run_with_optional_timeout "$CPU_COMPRESS_DURATION" compression "$compress_bin" b -mmt="$THREADS" >"$tmp" 2>&1
+  rc=$?
+  set -e
+
+  if [[ $rc -eq 0 ]]; then
+    rating="$(parse_7z_score "$tmp" || true)"
+    if [[ -n "$rating" ]]; then
+      compress_status="ok"
+      compress_score="$rating"
+      notes+=("compression=7z")
+    else
+      compress_status="degraded"
+      compress_error_code="0"
+      compress_error_reason="parse_failed"
+      compress_error_tail="$(tail -n 40 "$tmp" | tr '\n' '|' | tr '"' "'" | tr ';' ',' | sed -E 's/\|+$//' || true)"
+      [[ -z "$compress_error_tail" ]] && compress_error_tail="no_output"
+      notes+=("compression_7z_unparsed")
+    fi
   else
-    compress_status="failed"
-    notes+=("compression_7z_failed")
+    compress_error_code="$rc"
+    if [[ $rc -eq 124 || $rc -eq 137 ]]; then
+      compress_status="degraded"
+      compress_error_reason="timeout"
+      notes+=("compression_7z_timeout")
+    else
+      compress_status="failed"
+      compress_error_reason="exit_${rc}"
+      notes+=("compression_7z_failed")
+    fi
+
+    compress_error_tail="$(tail -n 40 "$tmp" | tr '\n' '|' | tr '"' "'" | tr ';' ',' | sed -E 's/\|+$//' || true)"
+    [[ -z "$compress_error_tail" ]] && compress_error_tail="no_output"
   fi
+
   rm -f "$tmp"
 else
   notes+=("compression_missing_7z")
@@ -137,7 +225,7 @@ if ffmpeg_bin="$(resolve_ffmpeg_bin)"; then
     local started ended rc
     started="$(date +%s.%N)"
     set +e
-    run_with_optional_timeout "$timeout_sec" "$ffmpeg_bin" -v error -nostdin -hide_banner -nostats \
+    run_with_optional_timeout "$timeout_sec" encoding "$ffmpeg_bin" -v error -nostdin -hide_banner -nostats \
       -f lavfi -i testsrc=size=1280x720:rate=30 -t "$CPU_ENCODE_DURATION" "$@" -f null "$encode_output_target" >"$tmp_file" 2>&1
     rc=$?
     set -e
@@ -223,6 +311,15 @@ cat > "$OUT_JSON" <<EOF
   "diagnostics": {
     "python_interpreter": "$PYTHON_BIN",
     "cpu_threads": "$THREADS",
+    "compression": {
+      "path": "${compress_bin}",
+      "version": "${compress_version}",
+      "command": "${compress_command}",
+      "timeout_wrapper": "${compress_timeout_used}",
+      "error_code": "${compress_error_code}",
+      "error_reason": "${compress_error_reason}",
+      "error_tail": "${compress_error_tail}"
+    },
     "ffmpeg": {
       "path": "${ffmpeg_bin}",
       "version": "${ffmpeg_version}",

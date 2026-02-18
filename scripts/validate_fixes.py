@@ -167,12 +167,92 @@ def test_cpu_encode_failure_includes_explicit_diagnostics_when_stderr_empty():
         assert "encoding_ffmpeg_fallback_failed:exit_42:no_stderr_output" in notes
 
 
+def test_cpu_compression_timeout_degrades_with_diagnostics():
+    bench_cpu = ROOT / "scripts" / "bench_cpu.sh"
+    with tempfile.TemporaryDirectory() as td:
+        bindir = Path(td) / "bin"
+        bindir.mkdir()
+
+        _write_executable(bindir / "sysbench", "#!/usr/bin/env bash\necho 'events per second: 321.00'\n")
+        _write_executable(
+            bindir / "7z",
+            "#!/usr/bin/env bash\n"
+            "if [[ \"${1:-}\" == \"b\" ]]; then\n"
+            "  echo 'simulated timeout path' >&2\n"
+            "  exit 124\n"
+            "fi\n"
+            "echo '7-Zip test build'\n",
+        )
+
+        out_json = Path(td) / "cpu.json"
+        out_csv = Path(td) / "cpu.csv"
+
+        env = os.environ.copy()
+        env["PATH"] = f"{bindir}:{env.get('PATH', '')}"
+        env["CPU_DURATION"] = "1"
+        env["CPU_COMPRESS_DURATION"] = "1"
+        env["CPU_ENCODE_DURATION"] = "1"
+
+        p = subprocess.run([str(bench_cpu), str(out_json), str(out_csv)], cwd=ROOT, env=env, capture_output=True, text=True)
+        assert p.returncode == 0, p.stderr
+
+        data = json.loads(out_json.read_text())
+        c = data["subtests"]["compression"]
+        cdiag = data["diagnostics"]["compression"]
+
+        assert data["status"] == "degraded"
+        assert c["status"] == "degraded"
+        assert cdiag["error_reason"] == "timeout"
+        assert cdiag["error_code"] == "124"
+        assert cdiag["timeout_wrapper"] in {"timeout", "none"}
+
+
+def test_cpu_compression_uses_7zz_when_7z_missing():
+    bench_cpu = ROOT / "scripts" / "bench_cpu.sh"
+    with tempfile.TemporaryDirectory() as td:
+        bindir = Path(td) / "bin"
+        bindir.mkdir()
+
+        _write_executable(bindir / "sysbench", "#!/usr/bin/env bash\necho 'events per second: 456.00'\n")
+        _write_executable(
+            bindir / "7zz",
+            "#!/usr/bin/env bash\n"
+            "if [[ \"${1:-}\" == \"b\" ]]; then\n"
+            "  echo 'Tot: 7777 MIPS'\n"
+            "  exit 0\n"
+            "fi\n"
+            "echo '7-Zip ZZZ test build'\n",
+        )
+
+        out_json = Path(td) / "cpu.json"
+        out_csv = Path(td) / "cpu.csv"
+
+        env = os.environ.copy()
+        env["PATH"] = f"{bindir}:{env.get('PATH', '')}"
+        env["CPU_DURATION"] = "1"
+        env["CPU_COMPRESS_DURATION"] = "1"
+        env["CPU_ENCODE_DURATION"] = "1"
+
+        p = subprocess.run([str(bench_cpu), str(out_json), str(out_csv)], cwd=ROOT, env=env, capture_output=True, text=True)
+        assert p.returncode == 0, p.stderr
+
+        data = json.loads(out_json.read_text())
+        c = data["subtests"]["compression"]
+        cdiag = data["diagnostics"]["compression"]
+
+        assert c["status"] == "ok"
+        assert c["score"] == "7777"
+        assert cdiag["path"].endswith("7zz")
+
+
 def main():
     test_nvcc_parse()
     test_llama_discovery_env_override()
     test_run_suite_respects_env_toggles_over_profile_defaults()
     test_cpu_encode_fallback_uses_devnull_target_and_degrades()
     test_cpu_encode_failure_includes_explicit_diagnostics_when_stderr_empty()
+    test_cpu_compression_timeout_degrades_with_diagnostics()
+    test_cpu_compression_uses_7zz_when_7z_missing()
     print("validate_fixes.py: OK")
 
 
