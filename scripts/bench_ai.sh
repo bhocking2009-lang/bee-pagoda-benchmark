@@ -464,11 +464,17 @@ for r in backend_results:
     if s in status_counts:
         status_counts[s] += 1
 
-if status_counts["failed"] > 0 and (status_counts["ok"] + status_counts["degraded"]) == 0:
-    overall = "failed"
-elif status_counts["ok"] > 0 and status_counts["failed"] == 0 and status_counts["degraded"] == 0:
+real_backends = [r for r in backend_results if r.get("data_source") == "real_model"]
+synthetic_backends = [r for r in backend_results if r.get("data_source") == "synthetic_proxy"]
+
+real_ok = [r for r in real_backends if r.get("status") == "ok"]
+real_ran = [r for r in real_backends if r.get("status") in ("ok", "degraded", "failed")]
+real_failed = [r for r in real_backends if r.get("status") == "failed"]
+synthetic_ok = [r for r in synthetic_backends if r.get("status") in ("ok", "degraded")]
+
+if real_ok and not real_failed:
     overall = "ok"
-elif (status_counts["ok"] + status_counts["degraded"] + status_counts["failed"]) > 0:
+elif real_ran or synthetic_ok or real_failed:
     overall = "degraded"
 else:
     overall = "skipped"
@@ -477,7 +483,7 @@ normalized = {}
 weighted_sum = 0.0
 weight_sum = 0.0
 
-for r in backend_results:
+for r in real_ok:
     b = r.get("backend")
     score = r.get("score")
     if score in (None, ""):
@@ -494,10 +500,13 @@ for r in backend_results:
     weight_sum += w
 
 composite = (weighted_sum / weight_sum) if weight_sum > 0 else None
+credible_ai_mode = len(real_ok) > 0
 
-primary = next((r for r in backend_results if r.get("backend") == "llama.cpp" and r.get("score") not in (None, "")), None)
+primary = next((r for r in real_ok if r.get("backend") == "llama.cpp"), None)
 if not primary:
-    primary = next((r for r in backend_results if r.get("score") not in (None, "")), backend_results[0] if backend_results else {})
+    primary = next((r for r in real_ok), None)
+if not primary:
+    primary = next((r for r in backend_results if r.get("backend") == "llama.cpp"), backend_results[0] if backend_results else {})
 
 summary = {
     "category": "ai",
@@ -511,14 +520,26 @@ summary = {
     "model": primary.get("model"),
     "context_size": primary.get("context_size"),
     "batch_size": primary.get("batch_size"),
-    "notes": "Per-backend metrics are primary truth (real_model vs synthetic_proxy labels included); composite is normalized helper score",
+    "data_source": "real_model" if credible_ai_mode else "synthetic_proxy",
+    "credible_ai_mode": credible_ai_mode,
+    "notes": "real-model-first: llama.cpp GGUF run required for credible AI mode; synthetic backends are optional proxies",
     "backend_results": backend_results,
+    "real_model": {
+        "ok": len(real_ok),
+        "ran": len(real_ran),
+        "failed": len(real_failed),
+    },
+    "synthetic_proxy": {
+        "ok_or_degraded": len(synthetic_ok),
+        "total": len(synthetic_backends),
+    },
     "composite": {
         "score": composite,
+        "display": composite if composite is not None else "N/A",
         "normalized_by_backend": normalized,
         "weights": weights,
         "references": refs,
-        "formula": "composite = sum(weight_b * min(1.0, score_b/reference_b)) / sum(weights for backends with numeric score)",
+        "formula": "composite = sum(weight_b * min(1.0, score_b/reference_b)) / sum(weights for successful real_model backends only)",
     },
 }
 

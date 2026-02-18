@@ -103,14 +103,15 @@ AI profile knobs (in `profiles/*.env`):
 - `AI_REF_LLAMA_TPS`, `AI_REF_TORCH_OPS`, `AI_REF_ONNXRUNTIME_OPS` - normalization references for transparent composite score
 
 AI backend modes:
-- **llama.cpp mode**: requires `llama-bench` and `AI_MODEL_PATH`; yields native token throughput (`data_source=real_model`).
-- **microbench mode** (torch/onnxruntime): synthetic matmul throughput proxies (`data_source=synthetic_proxy`).
-- **mixed mode** (default): runs all enabled backends independently and reports each result plus composite helper score.
+- **real-model-first mode (default semantics)**: `llama.cpp` + GGUF (`AI_MODEL_PATH`) is required for **credible AI mode**.
+- **microbench mode** (torch/onnxruntime): synthetic matmul proxies (`data_source=synthetic_proxy`) for optional fallback visibility only.
+- **mixed mode**: runs all enabled backends independently and reports each backend with explicit `data_source`.
 
 Composite formula (also emitted in report/JSON notes):
-- `composite = sum(weight_b * min(1.0, score_b/reference_b)) / sum(weights for backends with numeric score)`
+- `composite = sum(weight_b * min(1.0, score_b/reference_b)) / sum(weights for successful real_model backends only)`
+- If no successful real-model backend exists, composite is `N/A` (`null` in JSON).
 - Native backend metrics remain primary truth (`backend_results[]` in raw AI JSON).
-- AI result entries include `data_source`: `real_model` (llama.cpp with GGUF) vs `synthetic_proxy` (microbench backends).
+- AI summary exposes `credible_ai_mode=true|false`.
 
 ## Install Dependencies (Optional but Recommended)
 
@@ -119,9 +120,11 @@ Composite formula (also emitted in report/JSON notes):
 ```
 
 AI dependency notes:
-- Installer provisions a local `.venv` and attempts `pip install onnxruntime torch` (best-effort).
+- Installer provisions local `.venv`, upgrades pip/setuptools/wheel, then installs `torch` + ONNX Runtime.
+- NVIDIA-aware path: if `nvidia-smi` is present, installer tries `onnxruntime-gpu` first (falls back to `onnxruntime`).
+- On Python 3.14, torch wheels may be unavailable; use Python 3.12/3.13 and pass `--python /path/to/python`.
 - Preferred llama backend: `llama-bench` in `PATH` or `./llama.cpp/build/bin/llama-bench` plus local GGUF model (`AI_MODEL_PATH`).
-- Multi-backend behavior: each backend runs independently; missing backend is marked `skipped` (or `optional-missing` in preflight) and does not fail whole AI step.
+- Multi-backend behavior: each backend runs independently; missing backend is marked `skipped` (or `optional-missing` in preflight).
 
 ## Preflight Checks
 
@@ -200,12 +203,16 @@ Strictness semantics:
 
 - **Graphics context issues**: profiles default to `GPU_GAME_MODE=offscreen` to avoid display coupling.
   - For desktop windowed runs, set `GPU_GAME_MODE=interactive`.
-  - To avoid failing full runs on graphics-context problems, keep `STRICT_GPU_GAME=0` (default).
+  - If `interactive` is requested without a display, suite auto-falls back to offscreen and records note tags.
+  - To avoid brittle headless failures, keep `STRICT_GPU_GAME=0` (default).
 - **CPU encode failures (`ffmpeg`)**:
   - Inspect `raw/cpu.json` → `diagnostics.ffmpeg` for selected binary path/version and last error tail.
   - Pin a known binary if multiple ffmpeg builds are installed:
     - `CPU_FFMPEG_BIN=/usr/bin/ffmpeg ./run_suite.sh quick cpu`
   - If `libx264` is unavailable in your ffmpeg build, suite automatically retries `mpeg4` and marks CPU step as `degraded`.
+- **CPU compression (`7z`) timeout/non-zero exits**:
+  - Default behavior is signal-preserving but non-fatal (`degraded`) to reduce false suite failures.
+  - Set `CPU_STRICT_COMPRESSION=1` to restore hard-fail behavior on non-timeout 7z exits.
 - **No benchmark tools installed**: run `./scripts/install_dependencies.sh` or install manually.
 - **Permission issues with package manager**: rerun install script with a sudo-capable user.
 - **Missing Python**: install `python3`; report generator requires Python 3.

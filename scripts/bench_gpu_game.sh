@@ -21,6 +21,7 @@ bench="none"
 fps=""
 frametime_ms=""
 notes=""
+base_note=""
 
 # Runtime session diagnostics (helps explain headed/headless behavior)
 DISPLAY_VAL="${DISPLAY:-unset}"
@@ -40,6 +41,12 @@ if [[ "$MODE" == "auto" ]]; then
   else
     MODE="offscreen"
   fi
+fi
+
+if [[ "$MODE" == "interactive" && $have_display -eq 0 ]]; then
+  # resilience: requested interactive in headless session
+  MODE="offscreen"
+  base_note="interactive_requested_without_display;auto_fallback_to_offscreen"
 fi
 
 fail_or_degrade() {
@@ -121,8 +128,15 @@ elif [[ "$MODE" == "offscreen" ]]; then
     if run_glmark2_offscreen "$tmp"; then
       parse_glmark2 "$tmp"
       notes="mode=offscreen;tool=glmark2;resolution=${WIDTH}x${HEIGHT}"
+    elif [[ $have_display -eq 1 ]] && run_glmark2_interactive "$tmp"; then
+      parse_glmark2 "$tmp"
+      notes="mode=offscreen;glmark2_offscreen_failed_then_interactive_fallback;resolution=${WIDTH}x${HEIGHT}"
+    elif command -v vkmark >/dev/null 2>&1 && run_vkmark_interactive "$tmp"; then
+      bench="vkmark"
+      parse_vkmark "$tmp"
+      notes="mode=offscreen;glmark2_offscreen_failed_then_vkmark_fallback;resolution=${WIDTH}x${HEIGHT}"
     else
-      fail_or_degrade "mode=offscreen;glmark2 offscreen failed (context/timeout)."
+      fail_or_degrade "mode=offscreen;glmark2 offscreen failed (context/timeout) and fallbacks unavailable."
     fi
   elif command -v vkmark >/dev/null 2>&1; then
     bench="vkmark"
@@ -147,6 +161,14 @@ if [[ -n "$fps" ]]; then
 fi
 
 # Always append session diagnostics into notes for post-run troubleshooting
+if [[ -n "$base_note" ]]; then
+  if [[ -n "$notes" ]]; then
+    notes="${base_note};${notes}"
+  else
+    notes="$base_note"
+  fi
+fi
+
 if [[ -n "$notes" ]]; then
   notes="${notes};display=${DISPLAY_VAL};session=${SESSION_TYPE_VAL};glmark2=${GLMARK2_PATH}"
 else

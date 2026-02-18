@@ -16,6 +16,11 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
+try:
+    import importlib.metadata as importlib_metadata
+except Exception:
+    importlib_metadata = None
+
 out_json, out_csv = sys.argv[1], sys.argv[2]
 python_bin = os.environ.get("BENCH_PYTHON") or "python3"
 
@@ -185,6 +190,16 @@ def pip_check(min_version=""):
     }
 
 
+def has_distribution(dist_name):
+    if importlib_metadata is None:
+        return False
+    try:
+        importlib_metadata.version(dist_name)
+        return True
+    except Exception:
+        return False
+
+
 checks = []
 
 checks.append(command_check("python3", [python_bin], required=True, min_version=min_python, notes="interpreter used by suite"))
@@ -194,7 +209,11 @@ if torch_check["status"] in ("optional-missing", "missing") and python_tuple >= 
     msg = "PyTorch wheels are often unavailable on Python 3.14; use Python 3.12/3.13 for torch benchmarks"
     torch_check["notes"] = f"{torch_check.get('notes','')}; {msg}".strip("; ")
 checks.append(torch_check)
-checks.append(python_module_check("onnxruntime", "onnxruntime", required=False, min_version=min_onnx))
+
+onnx_check = python_module_check("onnxruntime", "onnxruntime", required=False, min_version=min_onnx)
+if has_distribution("onnxruntime-gpu"):
+    onnx_check["notes"] = (onnx_check.get("notes") or "") + ("; " if onnx_check.get("notes") else "") + "onnxruntime-gpu distribution detected"
+checks.append(onnx_check)
 
 llama = command_check("llama-bench", ["llama-bench", "llama.cpp-bench"], required=False)
 if llama["status"] in ("optional-missing", "missing"):
@@ -241,6 +260,29 @@ elif counts["present"] > 0 and counts["optional-missing"] > 0:
 else:
     overall = "ok"
 
+has_nvidia_smi = any(c.get("name") == "nvidia-smi" and c.get("status") == "present" for c in checks)
+has_nvcc = any(c.get("name") == "nvcc" and c.get("status") == "present" for c in checks)
+has_torch = torch_check.get("status") == "present"
+has_onnx = onnx_check.get("status") == "present"
+has_onnx_gpu = has_distribution("onnxruntime-gpu")
+
+nvidia_hint = "NVIDIA runtime not detected; CPU AI backends likely only"
+if has_nvidia_smi and not has_nvcc:
+    nvidia_hint = "NVIDIA driver detected (nvidia-smi present) without CUDA toolkit (nvcc missing)"
+elif has_nvidia_smi and has_nvcc:
+    nvidia_hint = "NVIDIA driver + CUDA toolkit detected"
+
+ai_dep_hint = "AI optional deps missing: install torch and onnxruntime/onnxruntime-gpu in BENCH_PYTHON env"
+if has_torch and has_onnx:
+    ai_dep_hint = "AI optional deps present"
+elif has_torch and not has_onnx:
+    ai_dep_hint = "torch present; install onnxruntime (CPU) or onnxruntime-gpu (NVIDIA)"
+elif has_onnx and not has_torch:
+    ai_dep_hint = "onnxruntime present; install torch for additional proxy backend"
+
+if has_nvidia_smi and has_onnx and not has_onnx_gpu:
+    ai_dep_hint += "; NVIDIA detected but onnxruntime-gpu not installed"
+
 summary = {
     "category": "preflight",
     "status": overall,
@@ -248,7 +290,7 @@ summary = {
     "status_counts": counts,
     "checks": checks,
     "interpreter": python_bin,
-    "notes": "Status classes: present, missing, version-mismatch, optional-missing",
+    "notes": f"Status classes: present, missing, version-mismatch, optional-missing; {nvidia_hint}; {ai_dep_hint}",
 }
 
 with open(out_json, "w") as f:

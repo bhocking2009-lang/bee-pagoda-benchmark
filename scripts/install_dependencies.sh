@@ -52,14 +52,33 @@ echo "[INFO] Preparing optional AI Python stack in local .venv"
 python3 -m venv .venv || true
 # shellcheck disable=SC1091
 source .venv/bin/activate
-python -m pip install --upgrade pip
+python -m pip install --upgrade pip setuptools wheel
 python -m pip install --upgrade numpy
-python -m pip install --upgrade onnxruntime torch || true
 
-echo "[INFO] AI stack assumptions:"
-echo "  - Python virtualenv: $(pwd)/.venv"
-echo "  - Python packages: torch, onnxruntime (best-effort install)"
-echo "  - llama.cpp benchmark path expected in PATH as llama-bench or at ./llama.cpp/build/bin/llama-bench"
-echo "  - Configure AI_MODEL_PATH to a local GGUF file for llama.cpp benchmark"
+PY_MM="$(python - <<'PY'
+import sys
+print(f"{sys.version_info.major}.{sys.version_info.minor}")
+PY
+)"
+
+echo "[INFO] Python in .venv: ${PY_MM}"
+if [[ "$PY_MM" == "3.14" ]]; then
+  echo "[WARN] Python 3.14 may not have stable torch wheels yet; prefer Python 3.12/3.13 for AI proxy deps"
+fi
+
+if command -v nvidia-smi >/dev/null 2>&1; then
+  echo "[INFO] NVIDIA runtime detected; attempting onnxruntime-gpu, falling back to onnxruntime"
+  python -m pip install --upgrade onnxruntime-gpu || python -m pip install --upgrade onnxruntime || true
+else
+  python -m pip install --upgrade onnxruntime || true
+fi
+
+python -m pip install --upgrade torch || true
+
+echo "[INFO] AI stack guidance:"
+echo "  - Credible AI mode requires llama.cpp + GGUF (AI_MODEL_PATH=/abs/model.gguf)"
+echo "  - llama-bench path: PATH or ./llama.cpp/build/bin/llama-bench"
+echo "  - Optional proxy deps: torch, onnxruntime (CPU) / onnxruntime-gpu (NVIDIA)"
+echo "  - If torch install fails on Python 3.14, create a 3.12 venv and pass --python /path/to/python"
 
 echo "[OK] Dependency installation complete."

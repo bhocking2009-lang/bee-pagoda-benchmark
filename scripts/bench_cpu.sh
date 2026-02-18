@@ -10,6 +10,7 @@ THREADS="${CPU_THREADS:-0}"
 
 CPU_COMPRESS_DURATION="${CPU_COMPRESS_DURATION:-20}"
 CPU_ENCODE_DURATION="${CPU_ENCODE_DURATION:-20}"
+CPU_STRICT_COMPRESSION="${CPU_STRICT_COMPRESSION:-0}"
 
 PYTHON_BIN="${BENCH_PYTHON:-python3}"
 
@@ -199,9 +200,14 @@ if compress_bin="$(resolve_7z_bin)"; then
       compress_error_reason="timeout"
       notes+=("compression_7z_timeout")
     else
-      compress_status="failed"
       compress_error_reason="exit_${rc}"
-      notes+=("compression_7z_failed")
+      if [[ "$CPU_STRICT_COMPRESSION" == "1" ]]; then
+        compress_status="failed"
+        notes+=("compression_7z_failed")
+      else
+        compress_status="degraded"
+        notes+=("compression_7z_nonzero_exit_degraded")
+      fi
     fi
 
     compress_error_tail="$(tail -n 40 "$tmp" | tr '\n' '|' | tr '"' "'" | tr ';' ',' | sed -E 's/\|+$//' || true)"
