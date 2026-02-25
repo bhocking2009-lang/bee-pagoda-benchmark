@@ -113,7 +113,7 @@ while [[ $# -gt 0 ]]; do
       fi
       shift 2
       ;;
-    --*)
+        --*)
       echo "[ERROR] Unknown option: $1" >&2
       usage
       exit 2

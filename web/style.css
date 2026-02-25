@@ -1,0 +1,13 @@
+body { background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%); color: #e0e0e0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; }
+.header { text-align: center; margin-bottom: 30px; }
+.logo { width: 60px; height: 60px; margin-right: 15px; vertical-align: middle; }
+nav button { background: linear-gradient(45deg, gold, orange); border: none; padding: 12px 24px; margin: 0 5px; border-radius: 25px; color: navy; font-weight: bold; cursor: pointer; transition: all 0.3s; }
+nav button:hover { transform: scale(1.05); box-shadow: 0 5px 15px rgba(255,215,0,0.4); }
+.tab { animation: fadeIn 0.5s; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+canvas { max-width: 100%; height: 400px; background: rgba(255,255,255,0.05); border-radius: 10px; }
+.card { background: rgba(255,255,255,0.1); border-radius: 15px; padding: 20px; margin: 10px; backdrop-filter: blur(10px); }
+.status-ok { color: #4ade80; }
+.status-degraded { color: #facc15; }
+.status-skipped { color: #94a3b8; }
+.status-failed { color: #ef4444; }

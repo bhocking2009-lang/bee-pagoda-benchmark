@@ -1,0 +1,9 @@
+<!DOCTYPE html>
+<html><head><title>HUD</title><script src="https://cdn.jsdelivr.net/npm/chart.js"></script><style>table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px}</style></head><body>
+<h1>Benchmark Dashboard</h1>
+<table><thead><tr><th>Report</th><th>Preview</th></tr></thead><tbody>
+$(for r in reports/run-* ; do [ -f "$r" ] || continue; echo "<tr><td>$(basename $r)</td><td>$(head -3 "$r")</td></tr>"; done)
+</tbody></table>
+<canvas id="chart"></canvas>
+<script>new Chart(document.getElementById('chart'), {type:'bar',data:{labels:['CPU','GPU'],datasets:[{data:[68k,NaN]}]}});</script>
+</body></html>
