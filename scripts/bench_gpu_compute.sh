@@ -10,10 +10,31 @@ if [[ "$TIMEOUT_SEC" -le 0 ]]; then
   [[ "$TIMEOUT_SEC" -lt 120 ]] && TIMEOUT_SEC=120
 fi
 
+export LC_ALL=C
+
+PYTHON_BIN="${BENCH_PYTHON:-python3}"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 status="ok"
 bench="none"
 score=""
 notes=""
+
+# Detect GPU vendor metadata via gpu_provider.py
+gpu_meta="{}"
+if [[ -f "$ROOT_DIR/gpu_provider.py" ]]; then
+  gpu_meta="$("$PYTHON_BIN" - "$ROOT_DIR" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+import json
+try:
+    from gpu_provider import detect_metadata
+    print(json.dumps(detect_metadata()))
+except Exception as e:
+    print(json.dumps({"vendor_detected": "unknown", "provider_selected": "GenericProvider", "provider_mode": "generic_fallback", "error": str(e)}))
+PY
+)"
+fi
 
 if command -v clpeak >/dev/null 2>&1; then
   bench="clpeak"
@@ -45,11 +66,15 @@ else
   notes="No GPU compute benchmark binary found (clpeak/hashcat)."
 fi
 
-"${BENCH_PYTHON:-python3}" - "$OUT_JSON" "$status" "$bench" "$score" "$notes" <<'PY'
+"${BENCH_PYTHON:-python3}" - "$OUT_JSON" "$status" "$bench" "$score" "$notes" "$gpu_meta" <<'PY'
 import json
 import sys
 
-out_json, status, bench, score, notes = sys.argv[1:6]
+out_json, status, bench, score, notes, gpu_meta_str = sys.argv[1:7]
+try:
+    gpu_meta = json.loads(gpu_meta_str)
+except Exception:
+    gpu_meta = {}
 with open(out_json, "w") as f:
     json.dump(
         {
@@ -59,6 +84,11 @@ with open(out_json, "w") as f:
             "primary_metric": "score",
             "score": score,
             "notes": notes,
+            "vendor_detected": gpu_meta.get("vendor_detected", "unknown"),
+            "provider_selected": gpu_meta.get("provider_selected", "GenericProvider"),
+            "provider_mode": gpu_meta.get("provider_mode", "generic_fallback"),
+            "gpu_enrichment": {k: v for k, v in gpu_meta.items()
+                               if k not in ("vendor_detected", "provider_selected", "provider_mode")},
         },
         f,
         indent=2,

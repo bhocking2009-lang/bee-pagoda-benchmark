@@ -1,9 +1,27 @@
 <!DOCTYPE html>
-<html><head><title>HUD</title><script src="https://cdn.jsdelivr.net/npm/chart.js"></script><style>table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px}</style></head><body>
-<h1>Benchmark Dashboard</h1>
-<table><thead><tr><th>Report</th><th>Preview</th></tr></thead><tbody>
-$(for r in reports/run-* ; do [ -f "$r" ] || continue; echo "<tr><td>$(basename $r)</td><td>$(head -3 "$r")</td></tr>"; done)
-</tbody></table>
-<canvas id="chart"></canvas>
-<script>new Chart(document.getElementById('chart'), {type:'bar',data:{labels:['CPU','GPU'],datasets:[{data:[68k,NaN]}]}});</script>
-</body></html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bee Pagoda Benchmark — Reports</title>
+<style>
+  body { font-family: 'Segoe UI', sans-serif; background: #0f0f23; color: #e2e8f0; margin: 0; padding: 20px; }
+  h1 { color: #fbbf24; }
+  table { border-collapse: collapse; width: 100%; max-width: 800px; margin-top: 16px; }
+  th, td { border: 1px solid rgba(255,255,255,0.1); padding: 10px 14px; text-align: left; }
+  th { background: rgba(255,255,255,0.08); }
+  a { color: #fbbf24; }
+  p { color: #94a3b8; }
+</style>
+</head>
+<body>
+<h1>🐝 Bee Pagoda Benchmark — Report Index</h1>
+<p>Open <a href="dashboard.html">dashboard.html</a> to view results interactively.</p>
+<p>Run <code>./run_suite.sh balanced</code> to generate a new benchmark run.
+Each run creates a directory under <code>reports/</code> with a
+<code>report/summary.json</code> that the dashboard can load.</p>
+<p>To view a report: open <strong>dashboard.html</strong>, click <strong>Results</strong>,
+then click <em>Open summary.json</em> and select the file from a run directory.</p>
+</body>
+</html>
+

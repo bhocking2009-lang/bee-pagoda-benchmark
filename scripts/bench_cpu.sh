@@ -48,6 +48,10 @@ encode_error_reason=""
 encode_timeout_used=""
 encode_output_target="${CPU_FFMPEG_NULL_TARGET:-/dev/null}"
 
+# Lock PATH snapshot into diagnostics and normalise locale for all tool output
+PATH_SNAPSHOT="$PATH"
+export LC_ALL=C
+
 resolve_ffmpeg_bin() {
   local explicit="${CPU_FFMPEG_BIN:-${FFMPEG_BIN:-}}"
   if [[ -n "$explicit" ]]; then
@@ -251,9 +255,48 @@ if ffmpeg_bin="$(resolve_ffmpeg_bin)"; then
     return 1
   }
 
+  # Pre-encode capability probe: run a 1-second test encode before the timed run.
+  # This separates setup/init failures from runtime failures and avoids counting
+  # initialisation time in the timed result.
+  probe_tmp="$(mktemp)"
+  set +e
+  run_with_optional_timeout 30 encoding "$ffmpeg_bin" -v error -nostdin -hide_banner -nostats \
+    -f lavfi -i testsrc=size=1280x720:rate=30 -t 1 -c:v libx264 -preset ultrafast \
+    -f null "$encode_output_target" >"$probe_tmp" 2>&1
+  probe_rc=$?
+  set -e
+  if [[ $probe_rc -ne 0 ]]; then
+    # libx264 not available; attempt mpeg4 probe
+    set +e
+    run_with_optional_timeout 30 encoding "$ffmpeg_bin" -v error -nostdin -hide_banner -nostats \
+      -f lavfi -i testsrc=size=1280x720:rate=30 -t 1 -c:v mpeg4 -q:v 5 -pix_fmt yuv420p \
+      -f null "$encode_output_target" >"$probe_tmp" 2>&1
+    probe_rc=$?
+    set -e
+    if [[ $probe_rc -ne 0 ]]; then
+      # Both codecs unavailable; mark encode as failed without running timed benchmark
+      encode_status="failed"
+      encode_tool="ffmpeg_probe"
+      encode_error_code="$probe_rc"
+      if [[ $probe_rc -eq 124 || $probe_rc -eq 137 ]]; then
+        encode_error_reason="ffmpeg_timeout"
+      else
+        encode_error_reason="ffmpeg_exit_${probe_rc}"
+      fi
+      encode_error_tail="$(tail -n 20 "$probe_tmp" | tr '\n' '|' | tr '"' "'" | sed -E 's/\|+$//' || true)"
+      [[ -z "$encode_error_tail" ]] && encode_error_tail="no_stderr_output"
+      notes+=("encoding_ffmpeg_probe_failed:${encode_error_reason}")
+      rm -f "$probe_tmp"
+      probe_rc=99  # signal to skip main encode block
+    fi
+  fi
+  rm -f "$probe_tmp"
+
   tmp="$(mktemp)"
   encode_command="$ffmpeg_bin -v error -nostdin -hide_banner -nostats -f lavfi -i testsrc=size=1280x720:rate=30 -t $CPU_ENCODE_DURATION -c:v libx264 -preset medium -f null $encode_output_target"
-  if run_encode_once "$tmp" -c:v libx264 -preset medium; then
+  if [[ "${probe_rc:-0}" -eq 99 ]]; then
+    : # probe already failed; encode_status already set above
+  elif run_encode_once "$tmp" -c:v libx264 -preset medium; then
     encode_tool="ffmpeg_libx264"
     encode_status="ok"
     notes+=("encoding=ffmpeg_libx264")
@@ -270,12 +313,12 @@ if ffmpeg_bin="$(resolve_ffmpeg_bin)"; then
       if [[ -z "$encode_error_tail" ]]; then
         encode_error_tail="no_stderr_output"
       fi
-      notes+=("encoding_ffmpeg_fallback_failed:${encode_error_reason}:${encode_error_tail}")
+      notes+=("encoding_ffmpeg_fallback_failed:ffmpeg_exit_${encode_error_code:-1}")
     fi
   fi
   rm -f "$tmp"
 else
-  notes+=("encoding_missing_ffmpeg")
+  notes+=("encoding_missing_ffmpeg:ffmpeg_missing")
 fi
 
 # Overall aggregation
@@ -317,6 +360,7 @@ cat > "$OUT_JSON" <<EOF
   "diagnostics": {
     "python_interpreter": "$PYTHON_BIN",
     "cpu_threads": "$THREADS",
+    "path_snapshot": "${PATH_SNAPSHOT}",
     "compression": {
       "path": "${compress_bin}",
       "version": "${compress_version}",

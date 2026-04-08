@@ -1,24 +1,290 @@
-&lt;!DOCTYPE html&gt;
-&lt;html&gt;
-&lt;head&gt;
-&lt;title&gt;Bee Pagoda Benchmark v4&lt;/title&gt;
-&lt;script src=&quot;https://cdn.jsdelivr.net/npm/chart.js&quot;&gt;&lt;/script&gt;
-&lt;link rel=&quot;stylesheet&quot; href=&quot;style.css&quot;&gt;
-&lt;/head&gt;
-&lt;body&gt;
-&lt;div class=&quot;header&quot;&gt;
-&lt;h1&gt;&lt;svg class=&quot;logo&quot;&gt;&lt;circle cx=&quot;20&quot; cy=&quot;20&quot; r=&quot;15&quot; fill=&quot;gold&quot;/&gt;&lt;path d=&quot;M20 5 L35 20 L20 35 L5 20 Z&quot; fill=&quot;orange&quot;/&gt;&lt;/svg&gt; Bee Pagoda Benchmark&lt;/h1&gt;
-&lt;/div&gt;
-&lt;nav&gt;
-&lt;button onclick=&quot;showTab(&#39;profiles&#39;)&quot;&gt;Profiles&lt;/button&gt;
-&lt;button onclick=&quot;showTab(&#39;tests&#39;)&quot;&gt;Tests&lt;/button&gt;
-&lt;button onclick=&quot;showTab(&#39;graphics&#39;)&quot;&gt;Graphics&lt;/button&gt;
-&lt;button onclick=&quot;showTab(&#39;results&#39;)&quot;&gt;Results&lt;/button&gt;
-&lt;/nav&gt;
-&lt;div id=&quot;profiles&quot; class=&quot;tab&quot;&gt;&lt;/div&gt;
-&lt;div id=&quot;tests&quot; class=&quot;tab&quot; style=&quot;display:none&quot;&gt;&lt;/div&gt;
-&lt;div id=&quot;graphics&quot; class=&quot;tab&quot; style=&quot;display:none&quot;&gt;&lt;canvas id=&quot;gChart&quot;&gt;&lt;/canvas&gt;&lt;/div&gt;
-&lt;div id=&quot;results&quot; class=&quot;tab&quot; style=&quot;display:none&quot;&gt;&lt;canvas id=&quot;rChart&quot;&gt;&lt;/canvas&gt;&lt;/div&gt;
-&lt;script src=&quot;dashboard.js&quot;&gt;&lt;/script&gt;
-&lt;/body&gt;
-&lt;/html&gt;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bee Pagoda Benchmark</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="stylesheet" href="style.css">
+<style>
+  /* Theme tokens */
+  :root {
+    --bg-navy: #0f0f23;
+    --accent-cpu: #22d3ee;
+    --accent-gpu: #d946ef;
+    --accent-gaming: #f59e0b;
+    --accent-ai: #14b8a6;
+    --accent-memory: #a78bfa;
+    --accent-storage: #3b82f6;
+    --brand-gold: #fbbf24;
+    --text: #e2e8f0;
+    --card-bg: rgba(255,255,255,0.07);
+  }
+
+  .domain-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    margin: 16px 0;
+  }
+
+  .domain-card {
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 16px;
+    border-left: 4px solid var(--brand-gold);
+    backdrop-filter: blur(10px);
+  }
+
+  .domain-card[data-cat="cpu"]        { border-color: var(--accent-cpu); }
+  .domain-card[data-cat="gpu_compute"]{ border-color: var(--accent-gpu); }
+  .domain-card[data-cat="gpu_game"]   { border-color: var(--accent-gaming); }
+  .domain-card[data-cat="ai"]         { border-color: var(--accent-ai); }
+  .domain-card[data-cat="memory"]     { border-color: var(--accent-memory); }
+  .domain-card[data-cat="disk"]       { border-color: var(--accent-storage); }
+
+  .domain-card h3 { margin: 0 0 8px; font-size: 1rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .domain-card .metric { font-size: 1.5rem; font-weight: bold; margin: 4px 0; }
+  .domain-card .metric-label { font-size: 0.75rem; color: #94a3b8; }
+  .domain-card .notes { font-size: 0.7rem; color: #64748b; margin-top: 8px; word-break: break-word; }
+
+  .status-chip {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  .chip-ok       { background: #14532d; color: #4ade80; }
+  .chip-degraded { background: #713f12; color: #facc15; }
+  .chip-skipped  { background: #1e293b; color: #94a3b8; }
+  .chip-failed   { background: #450a0a; color: #ef4444; }
+  .chip-missing  { background: #1e293b; color: #475569; }
+  .chip-pending  { background: #1e293b; color: #94a3b8; }
+  .chip-running  { background: #1e3a5f; color: #60a5fa; }
+
+  .band-excellent { color: #4ade80; font-weight: bold; }
+  .band-good      { color: #86efac; }
+  .band-fair      { color: #facc15; }
+  .band-poor      { color: #ef4444; }
+  .band-unknown   { color: #94a3b8; }
+
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.85rem; }
+  th, td { border: 1px solid rgba(255,255,255,0.1); padding: 8px 12px; text-align: left; }
+  th { background: rgba(255,255,255,0.08); }
+
+  .log-panel {
+    background: rgba(0,0,0,0.5);
+    border-radius: 8px;
+    padding: 12px;
+    font-family: monospace;
+    font-size: 0.78rem;
+    height: 250px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    color: #94a3b8;
+  }
+
+  .launch-form { display: flex; flex-direction: column; gap: 12px; max-width: 500px; }
+  .launch-form label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
+  .launch-form select, .launch-form input[type=text] {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: var(--text);
+    font-size: 0.9rem;
+  }
+  .launch-form .checkbox-row { flex-direction: row; align-items: center; gap: 8px; }
+  .btn-run {
+    background: linear-gradient(45deg, var(--brand-gold), orange);
+    color: navy;
+    border: none;
+    padding: 12px 32px;
+    border-radius: 25px;
+    font-weight: bold;
+    font-size: 1rem;
+    cursor: pointer;
+    width: fit-content;
+  }
+  .btn-run:hover { opacity: 0.9; transform: scale(1.02); }
+  .btn-secondary {
+    background: rgba(255,255,255,0.1);
+    color: var(--text);
+    border: 1px solid rgba(255,255,255,0.2);
+    padding: 8px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+  .btn-secondary:hover { background: rgba(255,255,255,0.15); }
+
+  .env-table td:first-child { color: #94a3b8; width: 40%; }
+  .preflight-present { color: #4ade80; }
+  .preflight-missing { color: #ef4444; }
+  .preflight-optional-missing { color: #facc15; }
+
+  .export-links { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  .export-link {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 6px;
+    padding: 6px 14px;
+    color: var(--brand-gold);
+    text-decoration: none;
+    font-size: 0.82rem;
+  }
+  .export-link:hover { background: rgba(255,255,255,0.14); }
+
+  .ai-backend-table td:nth-child(3) { font-family: monospace; font-size: 0.78rem; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>
+    <svg class="logo" viewBox="0 0 40 40" aria-hidden="true">
+      <circle cx="20" cy="20" r="15" fill="var(--brand-gold)" opacity="0.9"/>
+      <path d="M20 5 L35 20 L20 35 L5 20 Z" fill="orange" opacity="0.8"/>
+      <circle cx="20" cy="20" r="5" fill="#0f0f23"/>
+    </svg>
+    Bee Pagoda Benchmark
+  </h1>
+  <p style="color:#64748b;margin:0;font-size:0.85rem">System Benchmark v2.x — Linux-native, real workloads</p>
+</div>
+
+<nav id="main-nav">
+  <button onclick="showTab('tab-launcher')">🚀 Launch</button>
+  <button onclick="showTab('tab-running')">⚡ Running</button>
+  <button onclick="showTab('tab-results')">📊 Results</button>
+</nav>
+
+<!-- ============ LAUNCHER TAB ============ -->
+<div id="tab-launcher" class="tab">
+  <div class="card">
+    <h2>Launch Benchmark</h2>
+    <div class="launch-form">
+      <label>
+        Profile
+        <select id="sel-profile">
+          <option value="quick">quick (5–8 min)</option>
+          <option value="balanced" selected>balanced (15–25 min)</option>
+          <option value="deep">deep (45–90 min)</option>
+          <option value="ai-focus">ai-focus</option>
+          <option value="gaming-focus">gaming-focus</option>
+          <option value="storage-focus">storage-focus</option>
+        </select>
+      </label>
+      <label>
+        Categories
+        <div id="cat-checkboxes" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px">
+          <label class="checkbox-row"><input type="checkbox" value="cpu" checked> CPU</label>
+          <label class="checkbox-row"><input type="checkbox" value="gpu" checked> GPU</label>
+          <label class="checkbox-row"><input type="checkbox" value="ai" checked> AI</label>
+          <label class="checkbox-row"><input type="checkbox" value="memory" checked> Memory</label>
+          <label class="checkbox-row"><input type="checkbox" value="disk" checked> Storage</label>
+          <label class="checkbox-row"><input type="checkbox" value="stress"> Stress</label>
+        </div>
+      </label>
+      <label>
+        Custom <code>run_suite.sh</code> path (optional)
+        <input type="text" id="inp-runner-path" placeholder="../run_suite.sh">
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" id="chk-skip-preflight"> Skip preflight
+      </label>
+
+      <div style="background:rgba(0,0,0,0.3);border-radius:6px;padding:10px;font-family:monospace;font-size:0.8rem;color:#94a3b8" id="cmd-preview">
+        — select options above —
+      </div>
+
+      <button class="btn-run" id="btn-run" onclick="launchRun()">▶ Run Test</button>
+      <p id="launch-status" style="color:#94a3b8;font-size:0.82rem"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ============ RUNNING TAB ============ -->
+<div id="tab-running" class="tab" style="display:none">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <h2 style="margin:0">Bee Pagoda Benchmark</h2>
+        <p style="color:#64748b;margin:4px 0 0;font-size:0.85rem">System Benchmark v2.x</p>
+      </div>
+      <div style="text-align:right">
+        <div id="run-status-chip"><span class="status-chip chip-pending">Idle</span></div>
+        <div id="run-elapsed" style="font-size:0.8rem;color:#94a3b8;margin-top:4px">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="domain-grid" id="running-cards">
+    <!-- Cards injected by JS -->
+  </div>
+
+  <div class="card">
+    <h3>Live Output</h3>
+    <div class="log-panel" id="log-panel">Waiting for run to start…</div>
+  </div>
+</div>
+
+<!-- ============ RESULTS TAB ============ -->
+<div id="tab-results" class="tab" style="display:none">
+  <div class="card" id="results-meta">
+    <p style="color:#64748b">Load a <code>summary.json</code> to view results.</p>
+    <button class="btn-secondary" onclick="document.getElementById('file-picker').click()">📂 Open summary.json</button>
+    <input type="file" id="file-picker" accept=".json" style="display:none" onchange="loadFromFile(event)">
+  </div>
+
+  <!-- Run metadata -->
+  <div class="card" id="results-run-meta" style="display:none">
+    <h2>Run Metadata</h2>
+    <table class="env-table" id="run-meta-table"></table>
+    <div class="export-links" id="export-links"></div>
+  </div>
+
+  <!-- Environment fingerprint -->
+  <div class="card" id="results-env" style="display:none">
+    <h2>Environment</h2>
+    <table class="env-table" id="env-table"></table>
+  </div>
+
+  <!-- Preflight -->
+  <div class="card" id="results-preflight" style="display:none">
+    <h2>Preflight</h2>
+    <div id="preflight-summary"></div>
+    <table id="preflight-table" style="display:none">
+      <thead><tr><th>Dependency</th><th>Type</th><th>Required</th><th>Status</th><th>Version</th><th>Path</th><th>Notes</th></tr></thead>
+      <tbody id="preflight-tbody"></tbody>
+    </table>
+  </div>
+
+  <!-- Domain results -->
+  <div id="results-domains">
+    <div class="domain-grid" id="results-domain-cards"></div>
+  </div>
+
+  <!-- AI backend drilldown -->
+  <div class="card" id="results-ai-detail" style="display:none">
+    <h2>AI Backend Detail</h2>
+    <table class="ai-backend-table">
+      <thead><tr><th>Backend</th><th>Status</th><th>Data Source</th><th>Score</th><th>Prompt TPS</th><th>Eval TPS</th><th>Model</th><th>Notes</th></tr></thead>
+      <tbody id="ai-backend-tbody"></tbody>
+    </table>
+    <div id="ai-formula" style="margin-top:8px;font-family:monospace;font-size:0.8rem;color:#94a3b8"></div>
+  </div>
+
+  <!-- Normalized metrics -->
+  <div class="card" id="results-normalized" style="display:none">
+    <h2>Normalized Metrics &amp; Health Bands</h2>
+    <table id="normalized-table">
+      <thead><tr><th>Category</th><th>Metric</th><th>Value</th><th>Band</th></tr></thead>
+      <tbody id="normalized-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="dashboard.js"></script>
+</body>
+</html>

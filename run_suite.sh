@@ -178,9 +178,12 @@ else
     case "$c" in
       cpu) SELECTED+=(cpu) ;;
       gpu) SELECTED+=(gpu_compute gpu_game) ;;
+      gpu_compute) SELECTED+=(gpu_compute) ;;
+      gpu_game) SELECTED+=(gpu_game) ;;
       ai) SELECTED+=(ai) ;;
       memory) SELECTED+=(memory) ;;
       disk|storage) SELECTED+=(disk) ;;
+      stress) SELECTED+=(stress) ;;
       *)
         echo "[ERROR] Unknown category: $c" >&2
         usage
@@ -207,6 +210,100 @@ done
 SELECTED=("${DEDUP[@]}")
 
 exit_code=0
+
+# ---- Environment fingerprint ----
+env_fingerprint_json="$RAW_DIR/env_fingerprint.json"
+"$BENCH_PYTHON" - "$env_fingerprint_json" <<'PY'
+import json
+import os
+import subprocess
+import sys
+from datetime import datetime, timezone
+
+
+def _capture(*cmd, default=""):
+    try:
+        return subprocess.check_output(list(cmd), stderr=subprocess.DEVNULL, text=True).strip()
+    except Exception:
+        return default
+
+
+out_path = sys.argv[1]
+
+kernel = _capture("uname", "-r")
+distro = _capture("lsb_release", "-ds") or _capture("cat", "/etc/os-release", default="")
+if not distro:
+    try:
+        distro = open("/etc/os-release").readline().strip()
+    except Exception:
+        distro = ""
+
+cpu_model = _capture("cat", "/proc/cpuinfo", default="")
+for line in cpu_model.splitlines():
+    if "model name" in line:
+        cpu_model = line.split(":", 1)[-1].strip()
+        break
+else:
+    cpu_model = ""
+
+ram_kb = 0
+try:
+    for line in open("/proc/meminfo"):
+        if line.startswith("MemTotal:"):
+            ram_kb = int(line.split()[1])
+            break
+except Exception:
+    pass
+ram_mib = ram_kb // 1024
+
+gpu_model = _capture("nvidia-smi", "--query-gpu=name", "--format=csv,noheader")
+if not gpu_model:
+    gpu_model = _capture("bash", "-c",
+                         "lspci | grep -iE '(vga|3d|display)' | head -n1")
+
+gpu_driver = _capture("nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader")
+gpu_api = "CUDA" if gpu_driver else ""
+
+power_governor = _capture("cat", "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")
+
+fp = {
+    "captured_at": datetime.now(timezone.utc).isoformat(),
+    "kernel": kernel,
+    "distro": distro,
+    "cpu_model": cpu_model,
+    "ram_mib": ram_mib,
+    "gpu_model": gpu_model,
+    "gpu_driver": gpu_driver,
+    "gpu_api": gpu_api,
+    "power_governor": power_governor,
+}
+with open(out_path, "w") as f:
+    json.dump(fp, f, indent=2)
+print(f"[INFO] Environment fingerprint: kernel={kernel!r} cpu={cpu_model!r} ram={ram_mib}MiB")
+PY
+
+# ---- Write run manifest ----
+RUN_MANIFEST="$RUN_DIR/run_manifest.json"
+"$BENCH_PYTHON" - "$RUN_MANIFEST" "$PROFILE" "$RUN_DIR" "$(IFS=,; echo "${SELECTED[*]}")" <<'PY'
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+manifest_path, profile, run_dir, selected_csv = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+cats = [c for c in selected_csv.split(",") if c]
+manifest = {
+    "schema_version": "1",
+    "started_at": datetime.now(timezone.utc).isoformat(),
+    "profile": profile,
+    "run_dir": run_dir,
+    "selected_categories": cats,
+    "steps": {c: "pending" for c in cats},
+    "completed_at": None,
+}
+with open(manifest_path, "w") as f:
+    json.dump(manifest, f, indent=2)
+PY
 
 if [[ "$SKIP_PREFLIGHT" == "1" ]]; then
   "$BENCH_PYTHON" - "$RAW_DIR/preflight.json" "$RAW_DIR/preflight.csv" <<'PY'
@@ -243,11 +340,35 @@ fi
 run_step() {
   local name="$1"
   local script="$2"
+  # Resumable: skip if raw artifact already exists from a prior partial run
+  if [[ -f "$RAW_DIR/${name}.json" ]]; then
+    echo "[INFO] Skipping $name (artifact already exists — resuming)"
+    echo "{\"event\":\"step_skip\",\"category\":\"${name}\",\"reason\":\"artifact_exists\"}"
+    return 0
+  fi
   echo "[INFO] Running $name..."
+  echo "{\"event\":\"step_start\",\"category\":\"${name}\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
+  local step_exit=0
   if ! "$script" "$RAW_DIR/${name}.json" "$RAW_DIR/${name}.csv"; then
     echo "[ERROR] $name step failed" >&2
     exit_code=1
+    step_exit=1
   fi
+  local step_status="ok"
+  [[ $step_exit -ne 0 ]] && step_status="failed"
+  # Update manifest step status
+  "$BENCH_PYTHON" - "$RUN_MANIFEST" "$name" "$step_status" <<'PY'
+import json, sys
+mpath, cat, st = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    m = json.load(open(mpath))
+    m["steps"][cat] = st
+    with open(mpath, "w") as f:
+        json.dump(m, f, indent=2)
+except Exception:
+    pass
+PY
+  echo "{\"event\":\"step_done\",\"category\":\"${name}\",\"status\":\"${step_status}\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
 }
 
 RUN_REPS="${RUN_REPETITIONS:-1}"
@@ -258,6 +379,7 @@ fi
 
 for ((i=1; i<=RUN_REPS; i++)); do
   echo "[INFO] Repetition $i/$RUN_REPS"
+  echo "{\"event\":\"repetition_start\",\"rep\":${i},\"of\":${RUN_REPS}}"
   for step in "${SELECTED[@]}"; do
     case "$step" in
       cpu) run_step cpu "$ROOT/scripts/bench_cpu.sh" ;;
@@ -266,6 +388,7 @@ for ((i=1; i<=RUN_REPS; i++)); do
       ai) run_step ai "$ROOT/scripts/bench_ai.sh" ;;
       memory) run_step memory "$ROOT/scripts/bench_memory.sh" ;;
       disk) STORAGE_WORKDIR="$RUN_DIR" run_step disk "$ROOT/scripts/bench_storage.sh" ;;
+      stress) run_step stress "$ROOT/scripts/bench_stress.sh" ;;
     esac
   done
 done
@@ -280,5 +403,21 @@ if grep -R '"status": "failed"' "$RAW_DIR"/*.json >/dev/null 2>&1; then
   exit_code=1
 fi
 
+# Finalise run manifest
+"$BENCH_PYTHON" - "$RUN_MANIFEST" "$exit_code" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+mpath, ec = sys.argv[1], sys.argv[2]
+try:
+    m = json.load(open(mpath))
+    m["completed_at"] = datetime.now(timezone.utc).isoformat()
+    m["exit_code"] = int(ec)
+    with open(mpath, "w") as f:
+        json.dump(m, f, indent=2)
+except Exception:
+    pass
+PY
+
+echo "{\"event\":\"run_done\",\"exit_code\":${exit_code},\"run_dir\":\"${RUN_DIR}\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
 echo "[OK] Report: $REPORT_MD"
 exit "$exit_code"
