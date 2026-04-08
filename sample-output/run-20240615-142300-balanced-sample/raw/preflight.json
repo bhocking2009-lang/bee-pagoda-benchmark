@@ -1,0 +1,76 @@
+{
+  "category": "preflight",
+  "status": "ok",
+  "generated_at": "2024-06-15T14:23:00Z",
+  "interpreter": "/usr/bin/python3",
+  "status_counts": {
+    "present": 8,
+    "missing": 3,
+    "version-mismatch": 0,
+    "optional-missing": 2
+  },
+  "checks": [
+    {
+      "name": "python3",
+      "type": "runtime",
+      "required": true,
+      "status": "present",
+      "version": "3.12.3",
+      "path": "/usr/bin/python3"
+    },
+    {
+      "name": "sysbench",
+      "type": "tool",
+      "required": false,
+      "status": "present",
+      "version": "1.0.20",
+      "path": "/usr/bin/sysbench"
+    },
+    {
+      "name": "7z",
+      "type": "tool",
+      "required": false,
+      "status": "present",
+      "version": "23.01",
+      "path": "/usr/bin/7z"
+    },
+    {
+      "name": "ffmpeg",
+      "type": "tool",
+      "required": false,
+      "status": "present",
+      "version": "6.0",
+      "path": "/usr/bin/ffmpeg"
+    },
+    {
+      "name": "clpeak",
+      "type": "tool",
+      "required": false,
+      "status": "missing",
+      "version": "",
+      "path": ""
+    },
+    {
+      "name": "nvidia-smi",
+      "type": "tool",
+      "required": false,
+      "status": "missing",
+      "version": "",
+      "path": ""
+    },
+    {
+      "name": "torch",
+      "type": "python",
+      "required": false,
+      "status": "present",
+      "version": "2.3.0"
+    },
+    {
+      "name": "onnxruntime",
+      "type": "python",
+      "required": false,
+      "status": "present",
+      "version": "1.18.0"
+    }
+  ]
+}

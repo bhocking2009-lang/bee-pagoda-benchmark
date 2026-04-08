@@ -16,3 +16,21 @@ sample-output/*.sample.*
 
 # Build artifacts
 llama.cpp/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv312/
+dist/
+build/
+*.egg
+
+# Logs
+*.log
+app.log
+
+# Reports (keep directory, ignore run outputs)
+reports/run-*/
+reports/history.json

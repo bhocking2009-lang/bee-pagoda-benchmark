@@ -1,0 +1,8 @@
+{
+  "category": "disk",
+  "status": "ok",
+  "benchmark": "storage_suite",
+  "score": "1240.8",
+  "primary_metric": "seq_read_mb_per_sec",
+  "notes": "fio"
+}

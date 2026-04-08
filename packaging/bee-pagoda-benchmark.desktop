@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Bee Pagoda Benchmark
+GenericName=Linux Benchmark Suite
+Comment=Professional Linux benchmark suite with a modern native desktop GUI
+Exec=bee-pagoda %F
+Icon=bee-pagoda-benchmark
+Terminal=false
+Categories=System;Monitor;
+Keywords=benchmark;cpu;gpu;ai;memory;storage;performance;linux;
+StartupWMClass=bee-pagoda-benchmark
+MimeType=application/x-bee-pagoda-benchmark;

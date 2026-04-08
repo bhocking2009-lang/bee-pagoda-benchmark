@@ -1,0 +1,28 @@
+{
+  "category": "cpu",
+  "status": "ok",
+  "benchmark": "cpu_suite",
+  "primary_metric": "baseline_score",
+  "score": "1892.45",
+  "subtests": {
+    "baseline": {
+      "status": "ok",
+      "tool": "sysbench",
+      "score": "1892.45"
+    },
+    "compression": {
+      "status": "ok",
+      "tool": "7z_b",
+      "score": "28340"
+    },
+    "encoding": {
+      "status": "ok",
+      "tool": "ffmpeg_libx264",
+      "elapsed_sec": "14.231"
+    }
+  },
+  "diagnostics": {
+    "cpu_threads": "128"
+  },
+  "notes": "baseline=sysbench;compression=7z;encoding=ffmpeg_libx264"
+}

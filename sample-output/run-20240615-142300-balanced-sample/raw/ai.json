@@ -1,0 +1,35 @@
+{
+  "category": "ai",
+  "status": "degraded",
+  "benchmark": "ai_suite",
+  "primary_metric": "composite_score",
+  "credible_ai_mode": false,
+  "backend_results": [
+    {
+      "backend": "llama.cpp",
+      "status": "skipped",
+      "data_source": "real_model",
+      "notes": "llama.cpp benchmark available but AI_MODEL_PATH is not set"
+    },
+    {
+      "backend": "pytorch",
+      "status": "ok",
+      "data_source": "synthetic_proxy",
+      "score": 0.842,
+      "notes": "synthetic matmul benchmark"
+    },
+    {
+      "backend": "onnxruntime",
+      "status": "ok",
+      "data_source": "synthetic_proxy",
+      "score": 0.918,
+      "notes": "synthetic inference benchmark"
+    }
+  ],
+  "composite": {
+    "value": 0.88,
+    "formula": "weighted_average",
+    "weighted": true
+  },
+  "notes": "credible_ai_mode=false"
+}

@@ -1,0 +1,8 @@
+{
+  "category": "memory",
+  "status": "ok",
+  "benchmark": "memory_suite",
+  "score": "31204.5",
+  "primary_metric": "bandwidth_mb_per_sec",
+  "notes": "mbw"
+}

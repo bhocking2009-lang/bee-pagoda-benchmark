@@ -1,0 +1,6 @@
+{
+  "category": "gpu_game",
+  "status": "skipped",
+  "benchmark": "none",
+  "notes": "No GPU game benchmark binary found."
+}

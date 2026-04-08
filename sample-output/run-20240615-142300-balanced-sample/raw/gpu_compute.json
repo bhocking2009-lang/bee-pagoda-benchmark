@@ -1,0 +1,7 @@
+{
+  "category": "gpu_compute",
+  "status": "skipped",
+  "benchmark": "none",
+  "score": "",
+  "notes": "No GPU compute benchmark binary found (clpeak/hashcat)."
+}

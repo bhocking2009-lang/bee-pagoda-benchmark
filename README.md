@@ -1,218 +1,202 @@
-# Project Linux Benchmark Tool
+# Bee Pagoda Benchmark
 
-Automated Linux host benchmark suite for:
-- CPU throughput + workload tests
-- GPU compute throughput
-- AI inference throughput (multi-backend: llama.cpp bench + ONNX Runtime microbench + PyTorch microbench)
-- In-game / graphics workload performance (FPS + derived frame-time)
-- Memory bandwidth/latency-oriented tests
-- Storage performance with safe file-based fio runs
+A professional Linux benchmark suite with a modern native desktop GUI built on **PySide6 / Qt6**.
 
-## Deliverables Included
+## Features
 
-1. Project folder with scripts ✅
-2. One-command runner ✅ (`./run_suite.sh`)
-3. Dependency/install script ✅ (`scripts/install_dependencies.sh`)
-4. Benchmark config profiles ✅ (`profiles/*.env`)
-5. Report generator (Markdown + JSON + CSV) ✅
-6. Sample output (if runnable on host) ✅ under `sample-output/` and `reports/`
-7. README with usage and troubleshooting ✅
+| Category | Backends |
+|---|---|
+| CPU | sysbench · openssl · ffmpeg |
+| GPU Compute | clpeak · hashcat |
+| GPU Graphics | game-style offscreen workload |
+| AI | llama.cpp · PyTorch · ONNX Runtime |
+| Memory | mbw · stream |
+| Storage | fio · dd |
 
-## Layout
+**GUI highlights:**
+- Dark-first native desktop look — not a browser panel
+- Live benchmark monitoring with per-category status badges
+- Results viewer with charts, AI backend breakdown, and export
+- Run history with search and multi-run comparison
+- Dependency preflight screen with copy-to-clipboard install guidance
+- Profile-based runs: quick / balanced / deep
 
-- `run_suite.sh` - main orchestrator
-- `scripts/install_dependencies.sh` - installs optional dependencies
-- `scripts/bench_cpu.sh` - CPU benchmark suite (baseline + compression + encoding)
-- `scripts/bench_gpu_compute.sh` - GPU compute wrapper (clpeak, fallback hashcat)
-- `scripts/bench_gpu_game.sh` - session-aware graphics/game benchmark wrapper (`GPU_GAME_MODE=auto|interactive|offscreen`)
-- `scripts/bench_ai.sh` - AI multi-backend benchmark adapter (llama.cpp + ONNX Runtime + PyTorch)
-- `scripts/preflight_check.sh` - preflight dependency scanner (standalone + suite-integrated)
-- `scripts/bench_memory.sh` - memory tests (sysbench memory + tinymembench)
-- `scripts/bench_storage.sh` - storage tests (fio sequential + random 4k, safe file default)
-- `scripts/generate_report.py` - emits report files + preflight section
-- `profiles/quick.env` - short run
-- `profiles/balanced.env` - default
-- `profiles/deep.env` - longer, repeated runs
-- `reports/` - timestamped run artifacts
+---
 
-## One-Command Full Suite
+## Requirements
+
+- Linux (x86-64)
+- Python 3.12+
+- PySide6 (`pip install PySide6`)
+- Benchmark tools (sysbench, ffmpeg, 7z, etc.) — optional, degrades gracefully
+
+---
+
+## Quick Start
+
+### Run from source
 
 ```bash
-cd /home/openclaw/.openclaw/workspace/project-linux-benchmark-tool
+# Clone and set up
+git clone https://github.com/bhocking2009-lang/bee-pagoda-benchmark
+cd bee-pagoda-benchmark
+python3 -m venv .venv
+source .venv/bin/activate
+pip install PySide6
+pip install -e .
+
+# Launch the GUI
+bee-pagoda
+# or:
+python -m app.gui.main
+
+# CLI-only run
+bee-pagoda-cli balanced --categories cpu,memory
+# or directly:
+./run_suite.sh balanced --categories cpu,memory
+```
+
+### Install benchmark dependencies
+
+```bash
+bash scripts/install_dependencies.sh
+```
+
+---
+
+## Directory Structure
+
+```
+bee-pagoda-benchmark/
+├── app/
+│   ├── gui/                 ← PySide6 desktop application
+│   │   ├── main.py          ← QApplication entry point
+│   │   ├── windows/         ← Dashboard, run form, monitor, results, history…
+│   │   ├── widgets/         ← Sidebar, log viewer, status badges, charts
+│   │   ├── themes/          ← Qt stylesheet (dark theme)
+│   │   └── assets/          ← Icons, images
+│   ├── core/                ← Python benchmark engine
+│   │   ├── runner.py        ← run_suite.sh wrapper + CLI entry point
+│   │   ├── process_manager.py ← subprocess with live streaming
+│   │   ├── schemas.py       ← Typed result models (dataclasses)
+│   │   ├── result_loader.py ← Load JSON from run directories
+│   │   ├── history.py       ← JSON-backed run history index
+│   │   ├── profiles.py      ← .env profile loader
+│   │   └── diagnostics.py   ← CPU/GPU/RAM/OS detection
+│   └── services/            ← Orchestration layer
+│       ├── benchmark_service.py
+│       ├── preflight_service.py
+│       └── export_service.py
+├── scripts/
+│   ├── bench_cpu.sh
+│   ├── bench_gpu_compute.sh
+│   ├── bench_gpu_game.sh
+│   ├── bench_ai.sh
+│   ├── bench_memory.sh
+│   ├── bench_storage.sh
+│   ├── preflight_check.sh
+│   ├── generate_report.py
+│   └── install_dependencies.sh
+├── profiles/
+│   ├── quick.env            ← ~2 min
+│   ├── balanced.env         ← ~8 min  (default)
+│   └── deep.env             ← ~25 min
+├── reports/                 ← Output run directories
+├── packaging/
+│   ├── bee-pagoda-benchmark.desktop
+│   ├── build-appimage.sh
+│   └── build-deb.sh
+├── run_suite.sh             ← Orchestrator (usable headlessly)
+└── pyproject.toml
+```
+
+---
+
+## Profiles
+
+| Profile | Duration | Purpose |
+|---|---|---|
+| `quick` | ~2 min | Sanity checks, CI |
+| `balanced` | ~8 min | Everyday benchmarks (default) |
+| `deep` | ~25 min | Stable, high-confidence results |
+
+---
+
+## CLI Usage
+
+```bash
+# Run all categories with balanced profile
 ./run_suite.sh balanced
+
+# Run only CPU and memory, quick profile
+./run_suite.sh quick --categories cpu,memory
+
+# Skip preflight checks
+./run_suite.sh balanced --skip-preflight
+
+# Use a specific Python interpreter
+./run_suite.sh balanced --python /usr/bin/python3.12
 ```
 
-`run_suite.sh` auto-selects Python in this order for consistency across preflight/AI/reporting/CPU diagnostics:
-1. `--python /path/to/python` (explicit override)
-2. active shell virtualenv (`$VIRTUAL_ENV/bin/python`)
-3. local project venv (`./.venv/bin/python`, then `./.venv312/bin/python`)
-4. system `python3`
+---
 
-The selected interpreter is exported as `BENCH_PYTHON` and reused by all Python-backed steps.
+## Status Semantics
 
-By default, suite start runs a preflight dependency scan before benchmarks.
+| Status | Meaning |
+|---|---|
+| `ok` | Benchmark ran via primary path |
+| `degraded` | Fallback path used or partial coverage |
+| `skipped` | Dependency missing or intentionally unavailable |
+| `failed` | Attempted but did not complete |
+
+---
+
+## Output Formats
+
+Each run produces a timestamped directory under `reports/`:
+
+```
+reports/run-20240615-142300-balanced-xxxxx/
+├── raw/
+│   ├── cpu.json
+│   ├── gpu_compute.json
+│   ├── gpu_game.json
+│   ├── ai.json
+│   ├── memory.json
+│   ├── disk.json
+│   └── preflight.json
+└── report/
+    ├── summary.json
+    ├── summary.md
+    └── summary.csv
+```
+
+---
+
+## Packaging
 
 ```bash
-# Skip preflight only when needed
-./run_suite.sh quick ai --skip-preflight
+# Build AppImage
+bash packaging/build-appimage.sh
+
+# Build .deb
+bash packaging/build-deb.sh
 ```
 
-## Category Selection (Phase 1 v2)
+Output goes to `dist/`.
 
-You can now scope by categories while preserving profile behavior.
+---
 
-```bash
-# profile + comma-separated positional categories
-./run_suite.sh quick cpu,memory,disk
+## Config & Logs
 
-# profile + explicit flag
-./run_suite.sh balanced --categories cpu,gpu,ai,memory,disk
+| Path | Purpose |
+|---|---|
+| `~/.local/share/bee-pagoda-benchmark/logs/app.log` | GUI application log |
+| `reports/history.json` | Run history index |
+| `profiles/*.env` | Benchmark profile parameters |
 
-# force a specific interpreter (useful in CI)
-./run_suite.sh balanced --categories ai --python ./.venv/bin/python
+---
 
-# gpu expands to gpu_compute + gpu_game
-# ai runs dedicated AI benchmarks (llama.cpp adapter or fallback microbench)
-```
+## License
 
-## AI Benchmarking (Phase 2.5)
-
-Exact commands:
-
-```bash
-# Run only AI category with quick profile defaults
-./run_suite.sh quick ai
-
-# Run AI with llama.cpp model configured + explicit backend controls
-AI_MODEL_PATH=/absolute/path/to/model.gguf \
-AI_ENABLE_LLAMA=1 AI_ENABLE_TORCH=1 AI_ENABLE_ONNXRUNTIME=1 \
-AI_PROMPT_TOKENS=512 AI_GEN_TOKENS=128 AI_BATCH_SIZE=512 AI_CONTEXT_SIZE=4096 \
-./run_suite.sh balanced --categories ai
-```
-
-AI profile knobs (in `profiles/*.env`):
-- `AI_MODEL_PATH` - `.gguf` model path for llama.cpp benchmark
-- `AI_LLAMA_BENCH_PATH` - optional explicit path to `llama-bench` binary
-- `AI_PROMPT_TOKENS` - prompt-token load for benchmark
-- `AI_GEN_TOKENS` - generation/eval token count
-- `AI_BATCH_SIZE` - batch size for llama.cpp and microbench backends
-- `AI_CONTEXT_SIZE` - context length target
-- `AI_TIMEOUT_SEC` - benchmark timeout
-- `AI_ENABLE_LLAMA`, `AI_ENABLE_TORCH`, `AI_ENABLE_ONNXRUNTIME` - backend enable/disable toggles
-- `AI_WEIGHT_LLAMA`, `AI_WEIGHT_TORCH`, `AI_WEIGHT_ONNXRUNTIME` - composite weighting knobs
-- `AI_REF_LLAMA_TPS`, `AI_REF_TORCH_OPS`, `AI_REF_ONNXRUNTIME_OPS` - normalization references for transparent composite score
-
-AI backend modes:
-- **real-model-first mode (default semantics)**: `llama.cpp` + GGUF (`AI_MODEL_PATH`) is required for **credible AI mode**.
-- **microbench mode** (torch/onnxruntime): synthetic matmul proxies (`data_source=synthetic_proxy`) for optional fallback visibility only.
-- **mixed mode**: runs all enabled backends independently and reports each backend with explicit `data_source`.
-
-Composite formula (also emitted in report/JSON notes):
-- `composite = sum(weight_b * min(1.0, score_b/reference_b)) / sum(weights for successful real_model backends only)`
-- If no successful real-model backend exists, composite is `N/A` (`null` in JSON).
-- Native backend metrics remain primary truth (`backend_results[]` in raw AI JSON).
-- AI summary exposes `credible_ai_mode=true|false`.
-
-## Install Dependencies (Optional but Recommended)
-
-```bash
-./scripts/install_dependencies.sh
-```
-
-AI dependency notes:
-- Installer provisions local `.venv`, upgrades pip/setuptools/wheel, then installs `torch` + ONNX Runtime.
-- NVIDIA-aware path: if `nvidia-smi` is present, installer tries `onnxruntime-gpu` first (falls back to `onnxruntime`).
-- On Python 3.14, torch wheels may be unavailable; use Python 3.12/3.13 and pass `--python /path/to/python`.
-- Preferred llama backend: `llama-bench` in `PATH` or `./llama.cpp/build/bin/llama-bench` plus local GGUF model (`AI_MODEL_PATH`).
-- Multi-backend behavior: each backend runs independently; missing backend is marked `skipped` (or `optional-missing` in preflight).
-
-## Preflight Checks
-
-Run standalone:
-
-```bash
-./scripts/preflight_check.sh
-# or explicit outputs
-./scripts/preflight_check.sh ./reports/preflight.json ./reports/preflight.csv
-```
-
-Detected dependencies include:
-- python3, pip, torch, onnxruntime, llama-bench
-- nvcc (CUDA toolkit), nvidia-smi (driver/runtime)
-- clpeak, vkmark, glmark2, fio, sysbench, ffmpeg, 7z, tinymembench, hashcat
-
-Status classes:
-- `present`
-- `missing`
-- `version-mismatch`
-- `optional-missing`
-
-## Output Artifacts
-
-For each run, a folder is created under `reports/run-<timestamp>-<profile>/`:
-
-- `raw/preflight.json`, `raw/preflight.csv`
-- `raw/cpu.json`, `raw/gpu_compute.json`, `raw/gpu_game.json`, `raw/ai.json`, `raw/memory.json`, `raw/disk.json`
-- `report/summary.md`
-- `report/summary.json`
-- `report/summary.csv`
-
-## Exit Codes
-
-- `0`: selected scope completed with no `failed` status
-- `1`: at least one selected benchmark step failed
-- `2`: usage or profile/config error
-
-## Fallback / Status Strategy
-
-- CPU baseline: `sysbench` → fallback `openssl speed`
-- CPU workload: `7z b` + `ffmpeg` encode (best-effort fallback codec)
-  - deterministic ffmpeg selection: `CPU_FFMPEG_BIN` (or `FFMPEG_BIN`) override → first `ffmpeg` in `PATH`
-  - CPU raw JSON includes `diagnostics.ffmpeg.path/version/command/error_tail` for troubleshooting
-- GPU compute: `clpeak` → fallback `hashcat -b`
-- AI: runs all enabled backends independently in one invocation:
-  - `llama-bench` (llama.cpp) when binary + model are available
-  - ONNX Runtime microbench when Python package is available
-  - PyTorch microbench when Python package is available
-  - Missing backend => backend-level `skipped`; AI category becomes `ok`/`degraded`/`skipped`/`failed` from aggregate backend statuses
-- GPU game/graphics: session-aware mode
-  - `offscreen` (default profiles): run in-process without pop-up windows via `glmark2 --off-screen`
-  - `interactive`: prefer `vkmark`/interactive contexts, fallback to glmark2
-  - `auto`: choose based on display/session availability
-- Memory: `sysbench memory` + `tinymembench` when available
-- Storage: `fio` file-based tests only (workspace run dir)
-
-Statuses in reports:
-- `ok` - benchmark ran successfully with primary path
-- `degraded` - fallback used / partial representative coverage (still usable data)
-- `skipped` - dependency missing or intentionally unavailable
-- `failed` - benchmark attempted but failed
-
-Strictness semantics:
-- Default behavior favors **degraded over failed** when an optional backend/tool is unavailable.
-- `STRICT_GPU_GAME=1` upgrades GPU game benchmark errors from degraded/skipped-style tolerance to hard failure.
-- Suite exit code remains `1` only when a selected category ends in `failed`.
-
-## Safety & Idempotency
-
-- Storage tests use a generated file inside the run workspace (never raw block devices by default).
-- Safe to rerun; every execution writes a fresh timestamped report directory.
-- Scripts avoid mutating existing run output.
-
-## Troubleshooting
-
-- **Graphics context issues**: profiles default to `GPU_GAME_MODE=offscreen` to avoid display coupling.
-  - For desktop windowed runs, set `GPU_GAME_MODE=interactive`.
-  - If `interactive` is requested without a display, suite auto-falls back to offscreen and records note tags.
-  - To avoid brittle headless failures, keep `STRICT_GPU_GAME=0` (default).
-- **CPU encode failures (`ffmpeg`)**:
-  - Inspect `raw/cpu.json` → `diagnostics.ffmpeg` for selected binary path/version and last error tail.
-  - Pin a known binary if multiple ffmpeg builds are installed:
-    - `CPU_FFMPEG_BIN=/usr/bin/ffmpeg ./run_suite.sh quick cpu`
-  - If `libx264` is unavailable in your ffmpeg build, suite automatically retries `mpeg4` and marks CPU step as `degraded`.
-- **CPU compression (`7z`) timeout/non-zero exits**:
-  - Default behavior is signal-preserving but non-fatal (`degraded`) to reduce false suite failures.
-  - Set `CPU_STRICT_COMPRESSION=1` to restore hard-fail behavior on non-timeout 7z exits.
-- **No benchmark tools installed**: run `./scripts/install_dependencies.sh` or install manually.
-- **Permission issues with package manager**: rerun install script with a sudo-capable user.
-- **Missing Python**: install `python3`; report generator requires Python 3.
+MIT
