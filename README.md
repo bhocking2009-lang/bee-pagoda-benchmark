@@ -1,6 +1,6 @@
 # Bee Pagoda Benchmark
 
-A professional Linux benchmark suite with a modern native desktop GUI built on **PySide6 / Qt6**.
+A professional **cross-platform** (Linux + Windows) benchmark suite with a modern native desktop GUI built on **PySide6 / Qt6**.
 
 ## Features
 
@@ -25,19 +25,26 @@ A professional Linux benchmark suite with a modern native desktop GUI built on *
 
 ## Requirements
 
-- Linux (x86-64)
+### Linux
+- Linux x86-64 (Ubuntu 22.04+, Fedora 38+, Arch, etc.)
 - Python 3.12+
 - PySide6 (`pip install PySide6`)
-- Benchmark tools (sysbench, ffmpeg, 7z, etc.) — optional, degrades gracefully
+- Benchmark tools (ffmpeg, 7z, sysbench, etc.) — optional, degrades gracefully
+
+### Windows
+- Windows 10 (1809+) or Windows 11 — x86-64
+- Python 3.12+
+- PowerShell 5.1+ (built-in) or PowerShell 7
+- PySide6 (`pip install PySide6`)
+- Benchmark tools (7-Zip, FFmpeg, etc.) — optional, degrades gracefully
 
 ---
 
 ## Quick Start
 
-### Run from source
+### Linux — run from source
 
 ```bash
-# Clone and set up
 git clone https://github.com/bhocking2009-lang/bee-pagoda-benchmark
 cd bee-pagoda-benchmark
 python3 -m venv .venv
@@ -47,8 +54,6 @@ pip install -e .
 
 # Launch the GUI
 bee-pagoda
-# or:
-python -m app.gui.main
 
 # CLI-only run
 bee-pagoda-cli balanced --categories cpu,memory
@@ -56,10 +61,46 @@ bee-pagoda-cli balanced --categories cpu,memory
 ./run_suite.sh balanced --categories cpu,memory
 ```
 
-### Install benchmark dependencies
+### Linux — install benchmark dependencies
 
 ```bash
 bash scripts/install_dependencies.sh
+```
+
+### Windows — run from source
+
+```powershell
+git clone https://github.com/bhocking2009-lang/bee-pagoda-benchmark
+cd bee-pagoda-benchmark
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install PySide6
+pip install -e .
+
+# Launch the GUI
+bee-pagoda
+
+# CLI-only run
+bee-pagoda-cli balanced --categories cpu,memory
+# or directly via PowerShell:
+.\run_suite.ps1 -Profile balanced -Categories cpu,memory
+```
+
+### Windows — install benchmark dependencies
+
+```powershell
+# Run as Administrator for system-wide installs
+.\scripts\windows\install_dependencies.ps1
+```
+
+### Windows — build installer
+
+```powershell
+# Step 1: Build standalone .exe bundle
+.\packaging\build-windows.ps1
+
+# Step 2 (optional): Build Windows installer with Inno Setup
+iscc packaging\bee-pagoda-benchmark.iss
 ```
 
 ---
@@ -88,7 +129,7 @@ bee-pagoda-benchmark/
 │       ├── preflight_service.py
 │       └── export_service.py
 ├── scripts/
-│   ├── bench_cpu.sh
+│   ├── bench_cpu.sh            ← Linux benchmarks
 │   ├── bench_gpu_compute.sh
 │   ├── bench_gpu_game.sh
 │   ├── bench_ai.sh
@@ -96,17 +137,29 @@ bee-pagoda-benchmark/
 │   ├── bench_storage.sh
 │   ├── preflight_check.sh
 │   ├── generate_report.py
-│   └── install_dependencies.sh
+│   ├── install_dependencies.sh
+│   └── windows/                ← Windows PowerShell benchmarks
+│       ├── bench_cpu.ps1
+│       ├── bench_gpu_compute.ps1
+│       ├── bench_gpu_game.ps1
+│       ├── bench_ai.ps1
+│       ├── bench_memory.ps1
+│       ├── bench_storage.ps1
+│       ├── preflight_check.ps1
+│       └── install_dependencies.ps1
 ├── profiles/
-│   ├── quick.env            ← ~2 min
-│   ├── balanced.env         ← ~8 min  (default)
-│   └── deep.env             ← ~25 min
-├── reports/                 ← Output run directories
+│   ├── quick.env               ← ~2 min
+│   ├── balanced.env            ← ~8 min  (default)
+│   └── deep.env                ← ~25 min
+├── reports/                    ← Output run directories
 ├── packaging/
-│   ├── bee-pagoda-benchmark.desktop
-│   ├── build-appimage.sh
-│   └── build-deb.sh
-├── run_suite.sh             ← Orchestrator (usable headlessly)
+│   ├── bee-pagoda-benchmark.desktop  ← Linux desktop entry
+│   ├── build-appimage.sh             ← Linux AppImage
+│   ├── build-deb.sh                  ← Linux .deb
+│   ├── build-windows.ps1             ← Windows PyInstaller .exe
+│   └── bee-pagoda-benchmark.iss      ← Windows Inno Setup installer
+├── run_suite.sh                ← Linux orchestrator (bash)
+├── run_suite.ps1               ← Windows orchestrator (PowerShell)
 └── pyproject.toml
 ```
 
@@ -175,6 +228,8 @@ reports/run-20240615-142300-balanced-xxxxx/
 
 ## Packaging
 
+### Linux
+
 ```bash
 # Build AppImage
 bash packaging/build-appimage.sh
@@ -183,17 +238,42 @@ bash packaging/build-appimage.sh
 bash packaging/build-deb.sh
 ```
 
+### Windows
+
+```powershell
+# Build standalone .exe (PyInstaller)
+.\packaging\build-windows.ps1
+
+# Build Windows installer (requires Inno Setup 6)
+iscc packaging\bee-pagoda-benchmark.iss
+```
+
 Output goes to `dist/`.
 
 ---
 
 ## Config & Logs
 
-| Path | Purpose |
-|---|---|
-| `~/.local/share/bee-pagoda-benchmark/logs/app.log` | GUI application log |
-| `reports/history.json` | Run history index |
-| `profiles/*.env` | Benchmark profile parameters |
+| Platform | Path | Purpose |
+|---|---|---|
+| Linux | `~/.local/share/bee-pagoda-benchmark/logs/app.log` | GUI log |
+| Windows | `%LOCALAPPDATA%\BeePagodaBenchmark\logs\app.log` | GUI log |
+| Both | `reports/history.json` | Run history index |
+| Both | `profiles/*.env` | Benchmark profile parameters |
+
+---
+
+## Windows Notes
+
+- The Windows orchestrator is `run_suite.ps1` (PowerShell 5.1+).
+- PowerShell execution policy must allow local scripts. If needed, run:
+  ```powershell
+  Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+  ```
+- Benchmark scripts live under `scripts\windows\` and produce the same JSON
+  schema as the Linux bash scripts, so all GUI views work identically.
+- GPU detection uses `nvidia-smi` (if present) and `Win32_VideoController` via CIM.
+- AI detection supports llama.cpp, ONNX Runtime, and PyTorch — same as Linux.
 
 ---
 

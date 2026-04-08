@@ -117,14 +117,31 @@ class ExportService:
 
     def open_report_folder(self) -> bool:
         """Open the report folder in the system file manager."""
+        import platform
         folder = self.report_dir if self.report_dir.exists() else self._run_dir
-        for cmd in (["xdg-open"], ["nautilus"], ["dolphin"], ["thunar"]):
-            if shutil.which(cmd[0]):
-                try:
-                    subprocess.Popen([cmd[0], str(folder)])
-                    return True
-                except Exception:
-                    pass
+        system = platform.system()
+        if system == "Windows":
+            try:
+                subprocess.Popen(["explorer", str(folder)])
+                return True
+            except Exception as exc:
+                log.warning("explorer failed: %s", exc)
+            return False
+        elif system == "Darwin":
+            try:
+                subprocess.Popen(["open", str(folder)])
+                return True
+            except Exception as exc:
+                log.warning("open failed: %s", exc)
+            return False
+        else:
+            for cmd in (["xdg-open"], ["nautilus"], ["dolphin"], ["thunar"]):
+                if shutil.which(cmd[0]):
+                    try:
+                        subprocess.Popen([cmd[0], str(folder)])
+                        return True
+                    except Exception:
+                        pass
         log.warning("No file manager found to open folder: %s", folder)
         return False
 

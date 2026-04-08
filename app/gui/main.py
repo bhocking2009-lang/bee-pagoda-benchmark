@@ -26,8 +26,7 @@ def main() -> None:
     except ImportError:
         print(
             "ERROR: PySide6 is not installed.\n"
-            "Install it with:  pip install PySide6\n"
-            "Or:               sudo apt install python3-pyside6",
+            "Install it with:  pip install PySide6",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -55,17 +54,21 @@ def main() -> None:
 
 
 def _configure_logging() -> None:
+    import platform
     level = logging.DEBUG if "--debug" in sys.argv else logging.INFO
     logging.basicConfig(
         level=level,
         format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
         handlers=[logging.StreamHandler(sys.stderr)],
     )
-    # Also log to file
-    log_dir = Path.home() / ".local" / "share" / "bee-pagoda-benchmark" / "logs"
+    # Log to a platform-appropriate directory
+    if platform.system() == "Windows":
+        base = Path.home() / "AppData" / "Local" / "BeePagodaBenchmark" / "logs"
+    else:
+        base = Path.home() / ".local" / "share" / "bee-pagoda-benchmark" / "logs"
     try:
-        log_dir.mkdir(parents=True, exist_ok=True)
-        fh = logging.FileHandler(log_dir / "app.log", encoding="utf-8")
+        base.mkdir(parents=True, exist_ok=True)
+        fh = logging.FileHandler(base / "app.log", encoding="utf-8")
         fh.setLevel(logging.DEBUG)
         fh.setFormatter(logging.Formatter(
             "%(asctime)s  %(levelname)-8s  %(name)s  %(message)s"

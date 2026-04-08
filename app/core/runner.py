@@ -1,5 +1,5 @@
 """
-Python wrapper around run_suite.sh.
+Python wrapper around run_suite.sh (Linux/macOS) or run_suite.ps1 (Windows).
 
 Provides:
   - RunRequest: typed parameters for starting a benchmark run
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import platform
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,8 +21,10 @@ from app.core.process_manager import DoneCallback, LineCallback, ProcessManager
 
 log = logging.getLogger(__name__)
 
+_IS_WINDOWS = platform.system() == "Windows"
 _ROOT = Path(__file__).parent.parent.parent
-_RUN_SUITE = _ROOT / "run_suite.sh"
+_RUN_SUITE_SH  = _ROOT / "run_suite.sh"
+_RUN_SUITE_PS1 = _ROOT / "run_suite.ps1"
 
 
 @dataclass
@@ -38,7 +41,12 @@ class RunRequest:
         return ",".join(self.categories)
 
     def to_cmd(self) -> List[str]:
-        cmd = ["bash", str(_RUN_SUITE), self.profile]
+        if _IS_WINDOWS:
+            return self._to_cmd_windows()
+        return self._to_cmd_linux()
+
+    def _to_cmd_linux(self) -> List[str]:
+        cmd = ["bash", str(_RUN_SUITE_SH), self.profile]
         if self.categories:
             cmd += ["--categories", self.category_str()]
         if self.skip_preflight:
@@ -47,10 +55,29 @@ class RunRequest:
             cmd += ["--python", self.python_bin]
         return cmd
 
+    def _to_cmd_windows(self) -> List[str]:
+        cmd = [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy", "Bypass",
+            "-File", str(_RUN_SUITE_PS1),
+            "-Profile", self.profile,
+        ]
+        if self.categories:
+            cmd += ["-Categories", self.category_str()]
+        if self.skip_preflight:
+            cmd.append("-SkipPreflight")
+        if self.python_bin:
+            cmd += ["-Python", self.python_bin]
+        return cmd
+
 
 class Runner:
     """
-    Orchestrates a single benchmark run via run_suite.sh.
+    Orchestrates a single benchmark run via the platform-appropriate script.
+
+    On Linux/macOS: run_suite.sh (bash)
+    On Windows:     run_suite.ps1 (PowerShell)
 
     Thread-safe: one active run at a time.  Call start() from any thread;
     callbacks are invoked on the reader thread (use Qt signals in GUI code).
@@ -68,11 +95,13 @@ class Runner:
         if self._pm.is_running:
             raise RuntimeError("A benchmark run is already in progress")
 
-        if not _RUN_SUITE.exists():
-            raise FileNotFoundError(f"run_suite.sh not found at {_RUN_SUITE}")
+        suite_script = _RUN_SUITE_PS1 if _IS_WINDOWS else _RUN_SUITE_SH
+        if not suite_script.exists():
+            raise FileNotFoundError(
+                f"Benchmark orchestrator not found at {suite_script}"
+            )
 
         env = {**request.extra_env}
-
         cmd = request.to_cmd()
         log.info("Launching: %s", " ".join(cmd))
 
@@ -108,7 +137,7 @@ class Runner:
 
 def cli_main() -> None:
     """
-    Simple CLI wrapper for run_suite.sh with Python runner integration.
+    Simple CLI wrapper for the platform-specific benchmark suite.
 
     Usage: bee-pagoda-cli [profile] [--categories cpu,gpu,...] [--skip-preflight]
            bee-pagoda-cli --help

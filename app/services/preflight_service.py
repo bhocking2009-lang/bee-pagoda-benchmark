@@ -1,14 +1,19 @@
 """
 PreflightService: check which benchmark dependencies are installed.
 
-Runs scripts/preflight_check.sh and parses the resulting JSON so the GUI
-can show a dependency status view without blocking the main thread.
+On Linux:   runs scripts/preflight_check.sh
+On Windows: runs scripts/windows/preflight_check.ps1
+
+Both scripts write a JSON file with the same schema so the GUI can show
+a unified dependency status view.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
+import platform
 import shutil
 import subprocess
 import tempfile
@@ -19,8 +24,11 @@ from app.core.schemas import PreflightResult
 
 log = logging.getLogger(__name__)
 
+_IS_WINDOWS = platform.system() == "Windows"
 _ROOT = Path(__file__).parent.parent.parent
-_PREFLIGHT_SCRIPT = _ROOT / "scripts" / "preflight_check.sh"
+
+_PREFLIGHT_SH  = _ROOT / "scripts" / "preflight_check.sh"
+_PREFLIGHT_PS1 = _ROOT / "scripts" / "windows" / "preflight_check.ps1"
 
 
 class PreflightService:
@@ -28,13 +36,22 @@ class PreflightService:
 
     def run(self, python_bin: Optional[str] = None) -> PreflightResult:
         """
-        Execute preflight_check.sh and return parsed results.
+        Execute the platform-appropriate preflight script.
 
         Falls back to a minimal synthetic result if the script is not found
         or fails to execute.
         """
-        if not _PREFLIGHT_SCRIPT.exists():
-            log.warning("preflight_check.sh not found at %s", _PREFLIGHT_SCRIPT)
+        if _IS_WINDOWS:
+            return self._run_windows(python_bin)
+        return self._run_linux(python_bin)
+
+    # ------------------------------------------------------------------
+    # Linux path
+    # ------------------------------------------------------------------
+
+    def _run_linux(self, python_bin: Optional[str]) -> PreflightResult:
+        if not _PREFLIGHT_SH.exists():
+            log.warning("preflight_check.sh not found at %s", _PREFLIGHT_SH)
             return self._unavailable("preflight_check.sh not found")
 
         env_extra: dict = {}
@@ -43,14 +60,13 @@ class PreflightService:
 
         with tempfile.TemporaryDirectory() as tmp:
             out_json = Path(tmp) / "preflight.json"
-            out_csv = Path(tmp) / "preflight.csv"
+            out_csv  = Path(tmp) / "preflight.csv"
 
-            import os
             env = {**os.environ, **env_extra}
 
             try:
                 result = subprocess.run(
-                    ["bash", str(_PREFLIGHT_SCRIPT), str(out_json), str(out_csv)],
+                    ["bash", str(_PREFLIGHT_SH), str(out_json), str(out_csv)],
                     env=env,
                     capture_output=True,
                     text=True,
@@ -63,15 +79,64 @@ class PreflightService:
             except Exception as exc:
                 return self._unavailable(f"preflight execution failed: {exc}")
 
-            if out_json.exists():
-                try:
-                    with open(out_json, encoding="utf-8") as fh:
-                        data = json.load(fh)
-                    return PreflightResult.from_dict(data)
-                except Exception as exc:
-                    log.warning("Failed to parse preflight JSON: %s", exc)
+            return self._load_json(out_json)
 
-        return self._unavailable("preflight JSON output missing or invalid")
+    # ------------------------------------------------------------------
+    # Windows path
+    # ------------------------------------------------------------------
+
+    def _run_windows(self, python_bin: Optional[str]) -> PreflightResult:
+        if not _PREFLIGHT_PS1.exists():
+            log.warning("preflight_check.ps1 not found at %s", _PREFLIGHT_PS1)
+            return self._unavailable("scripts/windows/preflight_check.ps1 not found")
+
+        env_extra: dict = {}
+        if python_bin:
+            env_extra["BENCH_PYTHON"] = python_bin
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out_json = Path(tmp) / "preflight.json"
+
+            env = {**os.environ, **env_extra}
+
+            try:
+                result = subprocess.run(
+                    [
+                        "powershell",
+                        "-NoProfile",
+                        "-ExecutionPolicy", "Bypass",
+                        "-File", str(_PREFLIGHT_PS1),
+                        "-OutJson", str(out_json),
+                    ],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=90,
+                )
+                if result.returncode not in (0, 1):
+                    log.warning("preflight_check.ps1 returned %d: %s",
+                                result.returncode, result.stderr[:200])
+            except subprocess.TimeoutExpired:
+                return self._unavailable("preflight check timed out")
+            except Exception as exc:
+                return self._unavailable(f"preflight execution failed: {exc}")
+
+            return self._load_json(out_json)
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _load_json(out_json: Path) -> "PreflightResult":
+        if out_json.exists():
+            try:
+                with open(out_json, encoding="utf-8") as fh:
+                    data = json.load(fh)
+                return PreflightResult.from_dict(data)
+            except Exception as exc:
+                log.warning("Failed to parse preflight JSON: %s", exc)
+        return PreflightService._unavailable("preflight JSON output missing or invalid")
 
     @staticmethod
     def _unavailable(reason: str) -> PreflightResult:

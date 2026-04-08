@@ -6,6 +6,8 @@ callback as they arrive.  It is designed to be used from:
   - The CLI runner (direct callback prints to terminal)
   - The GUI benchmark service (callback feeds a Qt signal)
 
+Works on both Linux and Windows.
+
 Usage::
 
     pm = ProcessManager()
@@ -18,12 +20,15 @@ from __future__ import annotations
 
 import logging
 import os
+import platform
 import signal
 import subprocess
 import threading
 from typing import Callable, Dict, List, Optional
 
 log = logging.getLogger(__name__)
+
+_IS_WINDOWS = platform.system() == "Windows"
 
 LineCallback = Callable[[str], None]
 DoneCallback = Callable[[int], None]  # receives exit code
@@ -63,6 +68,12 @@ class ProcessManager:
 
         merged_env = {**os.environ, **(env or {})}
 
+        # On Windows, create the process in a new process group so that
+        # we can send Ctrl-Break to the whole group for graceful cancel.
+        creation_flags = 0
+        if _IS_WINDOWS:
+            creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
+
         self._proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -72,15 +83,16 @@ class ProcessManager:
             bufsize=1,
             env=merged_env,
             cwd=cwd,
+            creationflags=creation_flags,
         )
 
-        log.info("Started process PID=%d: %s", self._proc.pid, " ".join(cmd))
+        log.info("Started process PID=%d: %s", self._proc.pid, " ".join(str(c) for c in cmd))
 
         def _reader() -> None:
             assert self._proc is not None
             try:
                 for line in iter(self._proc.stdout.readline, ""):  # type: ignore[union-attr]
-                    stripped = line.rstrip("\n")
+                    stripped = line.rstrip("\n").rstrip("\r")
                     if on_line:
                         try:
                             on_line(stripped)
@@ -103,23 +115,38 @@ class ProcessManager:
         self._thread.start()
 
     def terminate(self) -> None:
-        """Send SIGTERM to the running process (graceful cancel)."""
+        """Gracefully cancel the running process."""
         with self._lock:
-            if self._proc and self._running:
-                log.info("Terminating process PID=%d", self._proc.pid)
+            if not (self._proc and self._running):
+                return
+            log.info("Terminating process PID=%d", self._proc.pid)
+            if _IS_WINDOWS:
+                # Send Ctrl-Break to the process group (graceful PowerShell cancel)
+                try:
+                    self._proc.send_signal(signal.CTRL_BREAK_EVENT)
+                except Exception:
+                    self._proc.terminate()
+            else:
                 try:
                     os.killpg(os.getpgid(self._proc.pid), signal.SIGTERM)
-                except (ProcessLookupError, PermissionError):
+                except (ProcessLookupError, PermissionError, AttributeError):
                     self._proc.terminate()
 
     def kill(self) -> None:
-        """Send SIGKILL to the running process (forced cancel)."""
+        """Forcibly kill the running process."""
         with self._lock:
-            if self._proc and self._running:
-                log.info("Killing process PID=%d", self._proc.pid)
+            if not (self._proc and self._running):
+                return
+            log.info("Killing process PID=%d", self._proc.pid)
+            if _IS_WINDOWS:
+                try:
+                    self._proc.kill()
+                except Exception:
+                    pass
+            else:
                 try:
                     os.killpg(os.getpgid(self._proc.pid), signal.SIGKILL)
-                except (ProcessLookupError, PermissionError):
+                except (ProcessLookupError, PermissionError, AttributeError):
                     self._proc.kill()
 
     def wait(self, timeout: Optional[float] = None) -> Optional[int]:
