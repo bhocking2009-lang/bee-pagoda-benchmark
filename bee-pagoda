@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# bee-pagoda — Bee Pagoda Benchmark CLI entry-point
+#
+# Installed to /usr/bin/bee-pagoda when the .deb package is used.
+# Can also be run directly from the repository root.
+#
+# Usage:
+#   bee-pagoda [profile] [options]            Run benchmark suite
+#   bee-pagoda help                           Show this help
+#   bee-pagoda version                        Show version
+#   bee-pagoda preflight                      Run preflight checks only
+#   bee-pagoda report <run_dir>               (Re-)generate report for a run dir
+#   bee-pagoda dashboard                      Open the web dashboard
+#
+# All other arguments are passed through to run_suite.sh.
+
+set -euo pipefail
+
+VERSION="0.1.0"
+
+# ── Locate installation root ────────────────────────────────────────────────
+# When installed via .deb, the suite lives in /usr/share/bee-pagoda.
+# When run from a repository clone, ROOT is the repo root.
+_SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+_SELF_DIR="$(dirname "$_SELF")"
+
+if [[ -f "${_SELF_DIR}/run_suite.sh" ]]; then
+  # Running from repo clone or /usr/share/bee-pagoda
+  BEE_ROOT="${_SELF_DIR}"
+elif [[ -d "/usr/share/bee-pagoda" && -f "/usr/share/bee-pagoda/run_suite.sh" ]]; then
+  BEE_ROOT="/usr/share/bee-pagoda"
+else
+  echo "[bee-pagoda] ERROR: Cannot locate installation root." >&2
+  echo "  Tried: ${_SELF_DIR}" >&2
+  echo "  Tried: /usr/share/bee-pagoda" >&2
+  echo "  Reinstall with: sudo dpkg -i bee-pagoda_*.deb" >&2
+  exit 1
+fi
+
+# ── Python resolution ────────────────────────────────────────────────────────
+resolve_python() {
+  for candidate in \
+    "${BENCH_PYTHON:-}" \
+    "${VIRTUAL_ENV:+${VIRTUAL_ENV}/bin/python}" \
+    "${BEE_ROOT}/.venv/bin/python" \
+    "${BEE_ROOT}/.venv312/bin/python" \
+    python3 \
+    python; do
+    [[ -z "$candidate" ]] && continue
+    if command -v "$candidate" >/dev/null 2>&1; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  echo "python3"  # best guess
+}
+
+BENCH_PYTHON="$(resolve_python)"
+export BENCH_PYTHON
+
+# ── Sub-command dispatch ─────────────────────────────────────────────────────
+CMD="${1:-run}"
+
+show_help() {
+  cat <<EOF
+Bee Pagoda Benchmark v${VERSION}
+
+USAGE
+  bee-pagoda [profile] [options ...]       Run benchmark suite
+  bee-pagoda <subcommand>
+
+SUBCOMMANDS
+  (default / no subcommand)               Same as 'run balanced'
+  help                                    Show this help text
+  version                                 Print version and exit
+  preflight                               Run preflight dependency scan only
+  report <run_dir>                        (Re-)generate report for an existing run dir
+  dashboard                               Open the web dashboard in a browser
+
+RUN OPTIONS (forwarded to run_suite.sh)
+  <profile>                               quick | balanced | deep | ai-focus | gaming-focus | storage-focus
+  <categories>                            cpu,gpu,ai,memory,disk,stress  (comma-separated)
+  --categories <list>                     Explicit category selection
+  --python <path>                         Override Python interpreter
+  --skip-preflight                        Skip preflight dependency scan
+
+EXAMPLES
+  bee-pagoda                              Run balanced suite with all categories
+  bee-pagoda quick cpu,memory             Short CPU+memory run
+  bee-pagoda deep --categories ai         Long AI-only run
+  bee-pagoda preflight                    Check dependencies without running benchmarks
+  bee-pagoda report reports/run-20260407-balanced-abc1
+  bee-pagoda dashboard
+
+REPORT OUTPUTS
+  Each run writes artifacts under: reports/run-<ts>-<profile>-<rand>/
+    raw/cpu.json, raw/gpu_compute.json, raw/ai.json, raw/memory.json, raw/disk.json
+    report/summary.md, report/summary.json, report/summary.csv
+    report/compare-prev.md
+    normalized/results.json
+
+EXIT CODES
+  0   All selected benchmark steps completed without 'failed' status
+  1   One or more benchmark steps failed
+  2   Usage or configuration error
+  3   Missing Python dependencies
+
+See README.md at ${BEE_ROOT}/README.md for full documentation.
+EOF
+}
+
+case "$CMD" in
+  help|--help|-h)
+    show_help
+    exit 0
+    ;;
+  version|--version|-V)
+    echo "bee-pagoda ${VERSION}"
+    exit 0
+    ;;
+  preflight)
+    shift
+    exec "${BEE_ROOT}/scripts/preflight_check.sh" "$@"
+    ;;
+  report)
+    shift
+    if [[ $# -lt 1 ]]; then
+      echo "[bee-pagoda] Usage: bee-pagoda report <run_dir>" >&2
+      exit 2
+    fi
+    RUN_DIR="$1"; shift
+    PROFILE="$(basename "$RUN_DIR" | sed -E 's/run-[0-9]+-[0-9]+-([^-]+)-.*/\1/' || echo "unknown")"
+    exec "$BENCH_PYTHON" "${BEE_ROOT}/scripts/generate_report.py" "$RUN_DIR" "$PROFILE" "$@"
+    ;;
+  dashboard)
+    shift
+    # Try to open the web dashboard
+    DASHBOARD="${BEE_ROOT}/web/dashboard.html"
+    if [[ ! -f "$DASHBOARD" ]]; then
+      echo "[bee-pagoda] Dashboard not found at: $DASHBOARD" >&2
+      exit 1
+    fi
+    if command -v xdg-open >/dev/null 2>&1; then
+      xdg-open "$DASHBOARD"
+    elif command -v open >/dev/null 2>&1; then
+      open "$DASHBOARD"
+    else
+      echo "[bee-pagoda] Open your browser and navigate to:" >&2
+      echo "  file://${DASHBOARD}" >&2
+    fi
+    exit 0
+    ;;
+  run)
+    # Explicit 'run' subcommand — strip it and fall through to run_suite.sh
+    shift
+    ;;
+  *)
+    # Unknown first argument → assume it's a profile name / run_suite.sh arg, pass through
+    ;;
+esac
+
+# ── Delegate to run_suite.sh ─────────────────────────────────────────────────
+exec "${BEE_ROOT}/run_suite.sh" "$@"

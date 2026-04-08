@@ -1,0 +1,30 @@
+#!/bin/bash
+set -e
+
+INSTALL_DIR="/usr/share/bee-pagoda"
+
+# Ensure all shell scripts are executable after installation
+find "${INSTALL_DIR}/scripts" -name "*.sh" -exec chmod 755 {} + 2>/dev/null || true
+chmod 755 "${INSTALL_DIR}/run_suite.sh"   2>/dev/null || true
+chmod 755 "${INSTALL_DIR}/bee-pagoda"     2>/dev/null || true
+chmod 755 "${INSTALL_DIR}/dashboard.sh"   2>/dev/null || true
+
+# Create reports directory if it doesn't exist
+if [ ! -d "${INSTALL_DIR}/reports" ]; then
+  mkdir -p "${INSTALL_DIR}/reports"
+  chmod 777 "${INSTALL_DIR}/reports"
+fi
+
+echo ""
+echo "╔══════════════════════════════════════════════════════════╗"
+echo "║           Bee Pagoda Benchmark v0.1.0 installed           ║"
+echo "╠══════════════════════════════════════════════════════════╣"
+echo "║  Run:   bee-pagoda                                        ║"
+echo "║  Help:  bee-pagoda help                                   ║"
+echo "║  Deps:  bee-pagoda preflight                              ║"
+echo "╚══════════════════════════════════════════════════════════╝"
+echo ""
+
+#DEBHELPER#
+
+exit 0

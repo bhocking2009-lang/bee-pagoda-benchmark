@@ -1,0 +1,5 @@
+#!/bin/bash
+set -e
+# Nothing special needed on removal; dpkg handles file cleanup.
+#DEBHELPER#
+exit 0

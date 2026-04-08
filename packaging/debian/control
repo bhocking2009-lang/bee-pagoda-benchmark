@@ -1,0 +1,26 @@
+Package: bee-pagoda
+Version: 0.1.0
+Section: utils
+Priority: optional
+Architecture: amd64
+Depends: bash (>= 5.0), python3 (>= 3.10)
+Recommends: sysbench, fio, ffmpeg, p7zip-full, python3-pip
+Suggests: nvidia-utils-525, clinfo, opencl-headers
+Maintainer: Bee Pagoda Benchmark Contributors <bee-pagoda@example.com>
+Homepage: https://github.com/bhocking2009-lang/bee-pagoda-benchmark
+Description: Automated Linux system benchmark suite
+ Bee Pagoda Benchmark is a comprehensive, automated Linux host benchmark
+ suite for measuring CPU throughput, GPU compute, AI inference, memory
+ bandwidth, and storage performance.
+ .
+ Features:
+  - CPU: sysbench baseline, 7z compression, ffmpeg encode (with pre-probe)
+  - GPU compute: clpeak / hashcat fallback; vendor auto-detection
+  - GPU graphics: glmark2 / vkmark; session-aware offscreen/interactive
+  - AI: llama.cpp, ONNX Runtime, PyTorch (multi-backend composite score)
+  - Memory: sysbench memory + tinymembench
+  - Storage: fio sequential + random 4K (safe file-based)
+  - Stress: mixed CPU+memory load, throttling detection, thermal trend
+ .
+ Each run produces structured JSON/CSV/Markdown reports with normalized
+ metrics, health bands, compare-to-previous delta, and SQLite trend history.

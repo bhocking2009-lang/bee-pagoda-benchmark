@@ -1,4 +1,6 @@
-# Project Linux Benchmark Tool
+# Bee Pagoda Benchmark
+
+[![Release](https://img.shields.io/badge/release-v0.1.0-blue)](dist/bee-pagoda_0.1.0_amd64.deb)
 
 Automated Linux host benchmark suite for:
 - CPU throughput + workload tests
@@ -7,6 +9,65 @@ Automated Linux host benchmark suite for:
 - In-game / graphics workload performance (FPS + derived frame-time)
 - Memory bandwidth/latency-oriented tests
 - Storage performance with safe file-based fio runs
+
+## Install as a Linux Program
+
+### Option A — Debian / Ubuntu (recommended)
+
+```bash
+# Download and install the .deb package
+wget https://github.com/bhocking2009-lang/bee-pagoda-benchmark/raw/main/dist/bee-pagoda_0.1.0_amd64.deb
+sudo dpkg -i bee-pagoda_0.1.0_amd64.deb
+
+# Or, from a clone of this repository:
+sudo dpkg -i dist/bee-pagoda_0.1.0_amd64.deb
+```
+
+After installation `bee-pagoda` is available system-wide:
+
+```bash
+bee-pagoda help
+bee-pagoda preflight          # check dependencies
+bee-pagoda                    # run balanced suite (default)
+bee-pagoda quick cpu,memory   # short CPU+memory run
+bee-pagoda deep ai            # long AI benchmark only
+```
+
+Reports are written to `/usr/share/bee-pagoda/reports/`.
+
+To uninstall:
+
+```bash
+sudo dpkg -r bee-pagoda
+```
+
+### Option B — Make install (any distro)
+
+```bash
+git clone https://github.com/bhocking2009-lang/bee-pagoda-benchmark.git
+cd bee-pagoda-benchmark
+sudo make install           # installs to /usr/share/bee-pagoda + /usr/bin/bee-pagoda
+# sudo make uninstall       # removes it
+```
+
+### Option C — Run directly from the repository (no install)
+
+```bash
+git clone https://github.com/bhocking2009-lang/bee-pagoda-benchmark.git
+cd bee-pagoda-benchmark
+./bee-pagoda help
+./run_suite.sh balanced
+```
+
+### Rebuild the .deb yourself
+
+```bash
+make deb                    # produces dist/bee-pagoda_0.1.0_amd64.deb
+```
+
+Requires: `dpkg-deb` (part of `dpkg` on Debian/Ubuntu), `bash`, `make`.
+
+---
 
 ## Deliverables Included
 

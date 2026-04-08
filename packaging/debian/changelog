@@ -1,0 +1,14 @@
+bee-pagoda (0.1.0) unstable; urgency=low
+
+  * Initial release.
+  * CPU benchmark: sysbench baseline, 7z compression, ffmpeg encode with pre-probe.
+  * GPU benchmark: vendor auto-detection (NVIDIA/AMD/Intel/Generic).
+  * AI benchmark: llama.cpp, ONNX Runtime, PyTorch multi-backend composite.
+  * Memory benchmark: sysbench memory + tinymembench.
+  * Storage benchmark: fio sequential + random 4K.
+  * Stress domain: mixed load, throttling detection, thermal trend.
+  * Web dashboard: 3-tab HTML/JS results viewer + launcher.
+  * SQLite trend history, normalized health bands, compare-to-previous reports.
+  * Profiles: quick, balanced, deep, ai-focus, gaming-focus, storage-focus.
+
+ -- Bee Pagoda Benchmark Contributors <bee-pagoda@example.com>  Tue, 08 Apr 2026 00:00:00 +0000
