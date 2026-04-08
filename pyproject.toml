@@ -54,5 +54,9 @@ bee-pagoda-cli = "app.core.runner:cli_main"
 where = ["."]
 include = ["app*"]
 
+# Root-level compatibility modules (preserved from the original simple-CLI structure)
+[tool.setuptools]
+py-modules = ["main", "checks", "config_loader", "plugins_loader"]
+
 [tool.setuptools.package-data]
 "app.gui.assets" = ["*.svg", "*.png", "*.ico"]
