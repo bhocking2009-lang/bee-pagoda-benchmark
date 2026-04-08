@@ -1,5 +1,6 @@
 import json
 import os
+import random
 import subprocess
 import sys
 import tempfile
@@ -23,7 +24,6 @@ def _run_dir(profile: str) -> str:
     ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     base = os.path.join(_ROOT, "reports")
     os.makedirs(base, exist_ok=True)
-    import random
     suffix = f"{random.randint(0, 0xffff):04x}"
     run_dir = os.path.join(base, f"run-{ts}-{profile}-{suffix}")
     os.makedirs(os.path.join(run_dir, "raw"), exist_ok=True)

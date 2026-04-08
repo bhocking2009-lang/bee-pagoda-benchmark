@@ -231,19 +231,25 @@ def _capture(*cmd, default=""):
 out_path = sys.argv[1]
 
 kernel = _capture("uname", "-r")
-distro = _capture("lsb_release", "-ds") or _capture("cat", "/etc/os-release", default="")
+distro = _capture("lsb_release", "-ds")
 if not distro:
     try:
-        distro = open("/etc/os-release").readline().strip()
+        with open("/etc/os-release") as _f:
+            for _line in _f:
+                if _line.startswith("PRETTY_NAME="):
+                    distro = _line.split("=", 1)[-1].strip().strip('"')
+                    break
     except Exception:
         distro = ""
 
-cpu_model = _capture("cat", "/proc/cpuinfo", default="")
-for line in cpu_model.splitlines():
-    if "model name" in line:
-        cpu_model = line.split(":", 1)[-1].strip()
-        break
-else:
+cpu_model = ""
+try:
+    with open("/proc/cpuinfo") as _f:
+        for _line in _f:
+            if "model name" in _line:
+                cpu_model = _line.split(":", 1)[-1].strip()
+                break
+except Exception:
     cpu_model = ""
 
 ram_kb = 0

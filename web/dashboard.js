@@ -13,6 +13,18 @@ function showTab(id) {
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────────
+
+/** Escape a string for safe insertion into HTML. */
+function escHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function na(v, unit) {
   if (v === null || v === undefined || v === '' || v === 'null') return 'N/A';
   return unit ? `${v} ${unit}` : String(v);
@@ -124,8 +136,8 @@ function _logAppend(text) {
 function _initRunningCards(cats) {
   const grid = document.getElementById('running-cards');
   grid.innerHTML = cats.map(cat => `
-    <div class="domain-card" data-cat="${cat}" id="rcard-${cat}">
-      <h3>${CAT_LABELS[cat] || cat}</h3>
+    <div class="domain-card" data-cat="${escHtml(cat)}" id="rcard-${escHtml(cat)}">
+      <h3>${escHtml(CAT_LABELS[cat] || cat)}</h3>
       <div>${statusChip('pending')}</div>
       <div class="metric">—</div>
       <div class="metric-label">—</div>
@@ -141,11 +153,11 @@ function _updateRunningCard(cat, result) {
   const label = result.primary_metric || '';
   const notes = result.notes || '';
   card.innerHTML = `
-    <h3>${CAT_LABELS[cat] || cat}</h3>
+    <h3>${escHtml(CAT_LABELS[cat] || cat)}</h3>
     <div>${statusChip(status)}</div>
-    <div class="metric">${na(score)}</div>
-    <div class="metric-label">${label || '—'}</div>
-    ${notes ? `<div class="notes">${notes.split(';').slice(0, 2).join('; ')}</div>` : ''}
+    <div class="metric">${escHtml(na(score))}</div>
+    <div class="metric-label">${escHtml(label) || '—'}</div>
+    ${notes ? `<div class="notes">${escHtml(notes.split(';').slice(0, 2).join('; '))}</div>` : ''}
   `;
 }
 
@@ -291,14 +303,14 @@ function renderResults(data) {
     document.getElementById('ai-backend-tbody').innerHTML = backendResults.map(br => {
       const ds = br.data_source || (br.backend === 'llama.cpp' ? 'real_model' : 'synthetic_proxy');
       return `<tr>
-        <td>${br.backend || ''}</td>
+        <td>${escHtml(br.backend || '')}</td>
         <td>${statusChip(br.status)}</td>
-        <td style="color:${ds === 'real_model' ? '#4ade80' : '#facc15'}">${ds}</td>
-        <td>${na(br.score)}</td>
-        <td>${na(br.prompt_tps)}</td>
-        <td>${na(br.eval_tps)}</td>
-        <td style="font-size:0.75rem;max-width:160px;overflow:hidden;text-overflow:ellipsis">${na(br.model)}</td>
-        <td style="font-size:0.72rem">${na(br.notes)}</td>
+        <td style="color:${ds === 'real_model' ? '#4ade80' : '#facc15'}">${escHtml(ds)}</td>
+        <td>${escHtml(na(br.score))}</td>
+        <td>${escHtml(na(br.prompt_tps))}</td>
+        <td>${escHtml(na(br.eval_tps))}</td>
+        <td style="font-size:0.75rem;max-width:160px;overflow:hidden;text-overflow:ellipsis">${escHtml(na(br.model))}</td>
+        <td style="font-size:0.72rem">${escHtml(na(br.notes))}</td>
       </tr>`;
     }).join('');
     const formula = (ai.composite || {}).formula;
@@ -316,10 +328,10 @@ function renderResults(data) {
         const band = metrics[`${key}_band`] || 'unknown';
         const bc = bandClass(band);
         rows += `<tr>
-          <td>${CAT_LABELS[cat] || cat}</td>
-          <td>${key}</td>
-          <td>${val !== null && val !== undefined ? val : 'N/A'}</td>
-          <td class="${bc}">${band}</td>
+          <td>${escHtml(CAT_LABELS[cat] || cat)}</td>
+          <td>${escHtml(key)}</td>
+          <td>${escHtml(val !== null && val !== undefined ? String(val) : 'N/A')}</td>
+          <td class="${escHtml(bc)}">${escHtml(band)}</td>
         </tr>`;
       });
     });
@@ -364,15 +376,15 @@ function renderDomainCard(cat, r) {
   // Secondary metric
   let secondary = '';
   if (cat === 'gpu_game' && r.frametime_ms != null) {
-    secondary = `<div class="metric-label">frametime: ${na(r.frametime_ms)} ms</div>`;
+    secondary = `<div class="metric-label">frametime: ${escHtml(na(r.frametime_ms))} ms</div>`;
   } else if (cat === 'ai') {
-    if (r.prompt_tps != null) secondary += `<div class="metric-label">prompt_tps: ${na(r.prompt_tps)}</div>`;
-    if (r.eval_tps != null) secondary += `<div class="metric-label">eval_tps: ${na(r.eval_tps)}</div>`;
+    if (r.prompt_tps != null) secondary += `<div class="metric-label">prompt_tps: ${escHtml(na(r.prompt_tps))}</div>`;
+    if (r.eval_tps != null) secondary += `<div class="metric-label">eval_tps: ${escHtml(na(r.eval_tps))}</div>`;
   } else if (cat === 'disk') {
     const rand = r.subtests && r.subtests.fio_rand4k ? r.subtests.fio_rand4k.iops : null;
-    if (rand != null) secondary = `<div class="metric-label">rand_iops: ${na(rand)}</div>`;
+    if (rand != null) secondary = `<div class="metric-label">rand_iops: ${escHtml(na(rand))}</div>`;
   } else if (cat === 'stress' && r.thermal_trend) {
-    secondary = `<div class="metric-label">thermal: ${r.thermal_trend}</div>`;
+    secondary = `<div class="metric-label">thermal: ${escHtml(r.thermal_trend)}</div>`;
   }
 
   // Subtests summary
@@ -380,7 +392,7 @@ function renderDomainCard(cat, r) {
   if (r.subtests) {
     const entries = Object.entries(r.subtests).slice(0, 4);
     subtestHtml = entries.map(([k, v]) =>
-      `<div class="metric-label">${k}: ${statusChip(v.status || 'unknown')} ${na(v.score || v.bw_kib_per_sec || v.iops || v.elapsed_sec)}</div>`
+      `<div class="metric-label">${escHtml(k)}: ${statusChip(v.status || 'unknown')} ${escHtml(na(v.score || v.bw_kib_per_sec || v.iops || v.elapsed_sec))}</div>`
     ).join('');
   }
 
@@ -388,18 +400,18 @@ function renderDomainCard(cat, r) {
 
   // Vendor info for GPU
   const vendorInfo = (cat === 'gpu_compute' && r.vendor_detected && r.vendor_detected !== 'unknown')
-    ? `<div class="metric-label">vendor: ${r.vendor_detected} (${r.provider_mode || ''})</div>` : '';
+    ? `<div class="metric-label">vendor: ${escHtml(r.vendor_detected)} (${escHtml(r.provider_mode || '')})</div>` : '';
 
   return `
-    <div class="domain-card" data-cat="${cat}">
-      <h3>${CAT_LABELS[cat] || cat}</h3>
+    <div class="domain-card" data-cat="${escHtml(cat)}">
+      <h3>${escHtml(CAT_LABELS[cat] || cat)}</h3>
       <div>${statusChip(status)}</div>
-      <div class="metric">${metricVal}</div>
-      <div class="metric-label">${metricLabel}</div>
+      <div class="metric">${escHtml(metricVal)}</div>
+      <div class="metric-label">${escHtml(metricLabel)}</div>
       ${secondary}
       ${subtestHtml}
       ${vendorInfo}
-      ${notesText ? `<div class="notes">${notesText}</div>` : ''}
+      ${notesText ? `<div class="notes">${escHtml(notesText)}</div>` : ''}
     </div>
   `;
 }

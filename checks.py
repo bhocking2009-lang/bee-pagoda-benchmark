@@ -42,21 +42,19 @@ def verify_deps() -> bool:
 
     missing_tools = []
     for tool in _SYSTEM_TOOLS:
+        found = False
         try:
             result = subprocess.run(
-                ["command", "-v", tool],
-                shell=False,
+                ["which", tool],
                 capture_output=True,
-                executable="/bin/sh",
             )
-            if result.returncode != 0:
-                missing_tools.append(tool)
+            found = result.returncode == 0
+        except FileNotFoundError:
+            found = False
         except Exception:
-            # Fallback: try with which
-            try:
-                subprocess.run(["which", tool], check=True, capture_output=True)
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                missing_tools.append(tool)
+            found = False
+        if not found:
+            missing_tools.append(tool)
 
     if missing_tools:
         print("Optional system tools not found (benchmarks will degrade gracefully): "

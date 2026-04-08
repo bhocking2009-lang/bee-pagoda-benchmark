@@ -192,6 +192,8 @@ fi
 
 notes_str="$(IFS=';'; echo "${notes[*]}")"
 
+thermal_arr="$(printf '%s\n' "${thermal_samples[@]:-}" | "$PYTHON_BIN" -c 'import json,sys; vals=[float(l.strip()) for l in sys.stdin if l.strip()]; print(json.dumps(vals))')"
+
 cat > "$OUT_JSON" <<EOF
 {
   "category": "stress",
@@ -215,7 +217,7 @@ cat > "$OUT_JSON" <<EOF
   "diagnostics": {
     "freq_start_mhz": "${freq_start}",
     "freq_end_mhz": "${freq_end}",
-    "thermal_samples_c": [$(IFS=,; echo "${thermal_samples[*]:-}" | sed 's/,/, /g')],
+    "thermal_samples_c": ${thermal_arr},
     "baseline_cpu_eps": "${baseline_eps}"
   },
   "notes": "$notes_str"
